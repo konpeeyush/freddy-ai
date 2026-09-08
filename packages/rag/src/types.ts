@@ -97,22 +97,32 @@ export interface Store {
    * a confidently ranked list of unrelated passages, which then gets cited as
    * fact. That is worth a guard.
    */
-  indexModel(tenantId: string): string | undefined
-  setIndexModel(tenantId: string, model: string): void
+  indexModel(tenantId: string): Promise<string | undefined>
+  setIndexModel(tenantId: string, model: string): Promise<void>
   /** Replaces every chunk for a URL. Ingest is idempotent because of this. */
-  upsertPage(tenantId: string, page: Page, chunks: EmbeddedChunk[]): void
+  upsertPage(tenantId: string, page: Page, chunks: EmbeddedChunk[]): Promise<void>
   /** The stored hash for a URL, or undefined if it was never ingested. */
-  pageHash(tenantId: string, url: string): string | undefined
+  pageHash(tenantId: string, url: string): Promise<string | undefined>
+  /** Removes a single URL's page and chunks. Used both by `removePagesNotIn`
+   *  and directly by the document-delete endpoint for a single upload. */
+  deletePage(tenantId: string, url: string): Promise<void>
+  /** Removes every page (and its chunks) whose URL starts with `origin` —
+   *  a whole crawled site, in one call. */
+  deletePagesByOrigin(tenantId: string, origin: string): Promise<number>
   /** Drops pages that vanished from the sitemap — otherwise a deleted doc
    *  keeps answering questions forever. */
-  removePagesNotIn(tenantId: string, urls: string[]): number
+  removePagesNotIn(tenantId: string, urls: string[]): Promise<number>
   /** Vector candidates by cosine similarity. */
-  searchVector(tenantId: string, query: Float32Array, limit: number): Scored[]
+  searchVector(
+    tenantId: string,
+    query: Float32Array,
+    limit: number
+  ): Promise<Scored[]>
   /** Keyword candidates by BM25. */
-  searchKeyword(tenantId: string, query: string, limit: number): Scored[]
-  stats(tenantId?: string): SourceStats[]
-  clear(tenantId: string): void
-  close(): void
+  searchKeyword(tenantId: string, query: string, limit: number): Promise<Scored[]>
+  stats(tenantId?: string): Promise<SourceStats[]>
+  clear(tenantId: string): Promise<void>
+  close(): Promise<void>
 }
 
 /** A candidate from one retriever, before fusion. */

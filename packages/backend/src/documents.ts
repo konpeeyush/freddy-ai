@@ -1,9 +1,9 @@
 import { randomUUID, createHash } from "node:crypto"
-import type Database from "better-sqlite3"
 
 import { chunkPage, embedChunks, embeddingModelId, type Page } from "@workspace/rag"
 import { EmbeddingModelMismatch } from "@workspace/rag"
 
+import type { DbAdapter } from "./adapter"
 import { store } from "./db"
 
 /*
@@ -45,21 +45,22 @@ function decodeCursor(cursor: string): { createdAt: number; id: string } {
   return { createdAt: Number(ts), id: rest.join(":") }
 }
 
-export function getDocument(
-  db: Database.Database,
+export async function getDocument(
+  db: DbAdapter,
   tenantId: string,
   id: string
-): DocumentRow | undefined {
-  return db
-    .prepare("SELECT * FROM documents WHERE tenant_id = ? AND id = ?")
-    .get(tenantId, id) as DocumentRow | undefined
+): Promise<DocumentRow | undefined> {
+  return db.get<DocumentRow>(
+    "SELECT * FROM documents WHERE tenant_id = ? AND id = ?",
+    [tenantId, id]
+  )
 }
 
-export function listDocuments(
-  db: Database.Database,
+export async function listDocuments(
+  db: DbAdapter,
   tenantId: string,
   options: { cursor?: string; limit: number }
-): { items: DocumentRow[]; nextCursor?: string } {
+): Promise<{ items: DocumentRow[]; nextCursor?: string }> {
   const conditions = ["tenant_id = ?"]
   const params: (string | number)[] = [tenantId]
 
@@ -69,12 +70,11 @@ export function listDocuments(
     params.push(createdAt, createdAt, id)
   }
 
-  const rows = db
-    .prepare(
-      `SELECT * FROM documents WHERE ${conditions.join(" AND ")}
-       ORDER BY created_at DESC, id DESC LIMIT ?`
-    )
-    .all(...params, options.limit + 1) as DocumentRow[]
+  const rows = await db.all<DocumentRow>(
+    `SELECT * FROM documents WHERE ${conditions.join(" AND ")}
+     ORDER BY created_at DESC, id DESC LIMIT ?`,
+    [...params, options.limit + 1]
+  )
 
   const hasMore = rows.length > options.limit
   const items = hasMore ? rows.slice(0, options.limit) : rows
@@ -118,7 +118,7 @@ async function extractText(
  * multi-minute site crawl needs would be pure overhead here.
  */
 export async function addDocument(
-  db: Database.Database,
+  db: DbAdapter,
   tenantId: string,
   input: {
     bytes: Buffer
@@ -131,20 +131,21 @@ export async function addDocument(
   const now = Date.now()
   const pageUrl = `upload://${tenantId}/${id}`
 
-  db.prepare(
+  await db.run(
     `INSERT INTO documents
        (id, tenant_id, filename, category, source, mime_type, size_bytes, status, error, page_url, chunk_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'upload', ?, ?, 'processing', NULL, ?, 0, ?, ?)`
-  ).run(
-    id,
-    tenantId,
-    input.filename,
-    input.category ?? null,
-    input.mimeType,
-    input.bytes.length,
-    pageUrl,
-    now,
-    now
+     VALUES (?, ?, ?, ?, 'upload', ?, ?, 'processing', NULL, ?, 0, ?, ?)`,
+    [
+      id,
+      tenantId,
+      input.filename,
+      input.category ?? null,
+      input.mimeType,
+      input.bytes.length,
+      pageUrl,
+      now,
+      now,
+    ]
   )
 
   try {
@@ -165,41 +166,38 @@ export async function addDocument(
     // built by a different embedding model rather than silently corrupting
     // search results with mixed vectors.
     const model = embeddingModelId()
-    const existingModel = store.indexModel(tenantId)
+    const existingModel = await store.indexModel(tenantId)
     if (existingModel && existingModel !== model) {
       throw new EmbeddingModelMismatch(existingModel, model)
     }
-    store.setIndexModel(tenantId, model)
+    await store.setIndexModel(tenantId, model)
 
     const embedded = await embedChunks(chunks)
-    store.upsertPage(tenantId, page, embedded.chunks)
+    await store.upsertPage(tenantId, page, embedded.chunks)
 
-    db.prepare(
-      "UPDATE documents SET status = 'ready', chunk_count = ?, updated_at = ? WHERE tenant_id = ? AND id = ?"
-    ).run(embedded.chunks.length, Date.now(), tenantId, id)
+    await db.run(
+      "UPDATE documents SET status = 'ready', chunk_count = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
+      [embedded.chunks.length, Date.now(), tenantId, id]
+    )
   } catch (cause) {
     console.error("document ingest failed:", cause)
-    db.prepare(
-      "UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE tenant_id = ? AND id = ?"
-    ).run(
-      cause instanceof Error ? cause.message : "processing failed",
-      Date.now(),
-      tenantId,
-      id
+    await db.run(
+      "UPDATE documents SET status = 'failed', error = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
+      [cause instanceof Error ? cause.message : "processing failed", Date.now(), tenantId, id]
     )
   }
 
-  return getDocument(db, tenantId, id)!
+  return (await getDocument(db, tenantId, id))!
 }
 
-export function deleteDocument(
-  db: Database.Database,
+export async function deleteDocument(
+  db: DbAdapter,
   tenantId: string,
   id: string
-): boolean {
-  const doc = getDocument(db, tenantId, id)
+): Promise<boolean> {
+  const doc = await getDocument(db, tenantId, id)
   if (!doc) return false
-  store.deletePage(tenantId, doc.page_url)
-  db.prepare("DELETE FROM documents WHERE tenant_id = ? AND id = ?").run(tenantId, id)
+  await store.deletePage(tenantId, doc.page_url)
+  await db.run("DELETE FROM documents WHERE tenant_id = ? AND id = ?", [tenantId, id])
   return true
 }

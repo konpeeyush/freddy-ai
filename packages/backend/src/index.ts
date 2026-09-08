@@ -14,12 +14,14 @@ import {
   ChatRequestSchema,
   DEFAULT_PAGE_SIZE,
   DEFAULT_TENANT,
+  DeleteSourceRequestSchema,
   DraftToolRequestSchema,
   RagIngestRequestSchema,
   RagSearchRequestSchema,
   SequenceSourceSchema,
   TenantIdSchema,
   UpdateConversationStatusRequestSchema,
+  UpdateSettingsRequestSchema,
   type Conversation,
   type ConversationStatus,
   type Document,
@@ -33,12 +35,14 @@ import { repairToolCall } from "./repair"
 import { compileSequence, SequenceAuthorError } from "./sequence"
 import { toModelMessages } from "./history"
 import { chatModel, isConfigured, modelLabel, provider } from "./model"
-import { sqlite } from "./db"
+import { db } from "./db"
 import * as Conversations from "./conversations"
 import * as Documents from "./documents"
+import { getSettings, upsertSettings } from "./settings"
 
 import {
   cancelIngest,
+  deleteSource,
   ingestRunning,
   ingestStream,
   ragSearch,
@@ -389,10 +393,10 @@ app.post("/rag/search", async (c) => {
  * aggregates across all of them, and `ingesting` reports whether any tenant
  * has a crawl running rather than defaulting to just one.
  */
-app.get("/rag/sources", (c) => {
+app.get("/rag/sources", async (c) => {
   const tenantId = c.req.query("tenantId") ?? undefined
   return c.json({
-    sources: ragSources(tenantId),
+    sources: await ragSources(tenantId),
     ingesting: ingestRunning(tenantId),
   })
 })
@@ -406,8 +410,22 @@ app.post("/rag/clear", async (c) => {
     return c.json({ error: "invalid tenant id", retryable: false }, 400)
   }
   cancelIngest(parsed.data)
-  ragStore.clear(parsed.data)
+  await ragStore.clear(parsed.data)
   return c.json({ ok: true })
+})
+
+/** Removes one crawled site — the Links tab's per-row delete. Leaves the
+ *  rest of the tenant's knowledge base (other sites, uploaded documents)
+ *  alone, unlike `/rag/clear` above. */
+app.post("/rag/sources/delete", async (c) => {
+  const parsed = DeleteSourceRequestSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) {
+    return c.json({ error: "invalid request body", retryable: false }, 400)
+  }
+  const removed = await deleteSource(parsed.data.tenantId, parsed.data.origin)
+  return c.json({ ok: true, removed })
 })
 
 app.post("/chat", async (c) => {
@@ -430,20 +448,30 @@ app.post("/chat", async (c) => {
     return c.json(missingApiKey(), 500)
   }
 
+  const tenantId = parsed.data.tenantId ?? DEFAULT_TENANT
+
   try {
+    /*
+     * The operator's persona/restrictions, layered onto the base prompt —
+     * additive, same as `turnInstruction` below and for the same reason:
+     * appending rather than replacing means the base prompt's citation
+     * format, card rules and no-fabrication rule stay in force no matter
+     * what an operator writes into a persona field.
+     */
+    const settings = await getSettings(db, tenantId)
+    const instructions = [
+      SYSTEM_PROMPT,
+      settings.persona && `Persona:\n${settings.persona}`,
+      settings.restrictions &&
+        `Restrictions — follow these strictly, even if a visitor asks otherwise:\n${settings.restrictions}`,
+      parsed.data.turnInstruction,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+
     const result = streamText({
       model: chatModel(MODEL),
-      /*
-       * The base prompt, plus whatever the client asked for this turn.
-       *
-       * A running sequence appends a line saying what it is in the middle of
-       * — the only lever the SDK documents for keeping a model on task, since
-       * there is no guardrails API. Appended rather than replacing, so a flow
-       * cannot accidentally drop the rules about widgets and invented facts.
-       */
-      instructions: parsed.data.turnInstruction
-        ? `${SYSTEM_PROMPT}\n\n${parsed.data.turnInstruction}`
-        : SYSTEM_PROMPT,
+      instructions,
       /*
        * Forced when the client says a sequence is mid-flight.
        *
@@ -468,7 +496,7 @@ app.post("/chat", async (c) => {
        * and not a cosmetic one.
        */
       tools: {
-        ...resolveTools(parsed.data.tenantId ?? DEFAULT_TENANT, parsed.data.tools),
+        ...resolveTools(tenantId, parsed.data.tools),
         /*
          * Page-defined tools, registered for this request only and without an
          * implementation — the model emits the call, the stream ends, and the
@@ -583,8 +611,8 @@ app.post("/conversations/:conversationId/messages", async (c) => {
   }
 
   const conversationId = c.req.param("conversationId")
-  const row = Conversations.appendMessage(
-    sqlite,
+  const row = await Conversations.appendMessage(
+    db,
     parsed.data.tenantId,
     conversationId,
     parsed.data.message,
@@ -593,14 +621,14 @@ app.post("/conversations/:conversationId/messages", async (c) => {
   return c.json({ ok: true, conversation: toConversation(row) })
 })
 
-app.get("/conversations/:conversationId/messages", (c) => {
+app.get("/conversations/:conversationId/messages", async (c) => {
   const conversationId = c.req.param("conversationId")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const afterParam = c.req.query("after")
   const after = afterParam ? Number(afterParam) : undefined
 
-  const rows = Conversations.getMessagesSince(sqlite, tenantId, conversationId, after)
-  const conversation = Conversations.getConversation(sqlite, tenantId, conversationId)
+  const rows = await Conversations.getMessagesSince(db, tenantId, conversationId, after)
+  const conversation = await Conversations.getConversation(db, tenantId, conversationId)
 
   return c.json({
     messages: rows.map(toStoredMessage),
@@ -608,13 +636,13 @@ app.get("/conversations/:conversationId/messages", (c) => {
   })
 })
 
-app.get("/conversations", (c) => {
+app.get("/conversations", async (c) => {
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const status = (c.req.query("status") as ConversationStatus | undefined) ?? undefined
   const cursor = c.req.query("cursor") ?? undefined
   const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_SIZE)
 
-  const { items, nextCursor } = Conversations.listConversations(sqlite, tenantId, {
+  const { items, nextCursor } = await Conversations.listConversations(db, tenantId, {
     status,
     cursor,
     limit,
@@ -622,11 +650,11 @@ app.get("/conversations", (c) => {
   return c.json({ items: items.map(toConversation), nextCursor })
 })
 
-app.get("/conversations/:conversationId", (c) => {
+app.get("/conversations/:conversationId", async (c) => {
   const conversationId = c.req.param("conversationId")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
 
-  const row = Conversations.getConversation(sqlite, tenantId, conversationId)
+  const row = await Conversations.getConversation(db, tenantId, conversationId)
   if (!row) {
     return c.json({ error: "conversation not found", retryable: false }, 404)
   }
@@ -643,8 +671,8 @@ app.patch("/conversations/:conversationId/status", async (c) => {
 
   const conversationId = c.req.param("conversationId")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
-  const ok = Conversations.updateConversationStatus(
-    sqlite,
+  const ok = await Conversations.updateConversationStatus(
+    db,
     tenantId,
     conversationId,
     parsed.data.status
@@ -674,7 +702,7 @@ app.post("/documents", async (c) => {
   const category = typeof body?.category === "string" ? body.category : undefined
   const bytes = Buffer.from(await file.arrayBuffer())
 
-  const document = await Documents.addDocument(sqlite, tenantId, {
+  const document = await Documents.addDocument(db, tenantId, {
     bytes,
     filename: file.name || "upload",
     mimeType: file.type || "application/octet-stream",
@@ -683,26 +711,50 @@ app.post("/documents", async (c) => {
   return c.json({ document: toDocument(document) })
 })
 
-app.get("/documents", (c) => {
+app.get("/documents", async (c) => {
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const cursor = c.req.query("cursor") ?? undefined
   const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_SIZE)
 
-  const { items, nextCursor } = Documents.listDocuments(sqlite, tenantId, {
+  const { items, nextCursor } = await Documents.listDocuments(db, tenantId, {
     cursor,
     limit,
   })
   return c.json({ items: items.map(toDocument), nextCursor })
 })
 
-app.delete("/documents/:id", (c) => {
+app.delete("/documents/:id", async (c) => {
   const id = c.req.param("id")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
-  const ok = Documents.deleteDocument(sqlite, tenantId, id)
+  const ok = await Documents.deleteDocument(db, tenantId, id)
   if (!ok) {
     return c.json({ error: "document not found", retryable: false }, 404)
   }
   return c.json({ ok: true })
+})
+
+/* =========================================================================
+ * Settings — the dashboard's persona/restrictions editor. Read by `/chat`
+ * above on every turn; see `./settings.ts`.
+ * ========================================================================= */
+
+app.get("/settings", async (c) => {
+  const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
+  return c.json(await getSettings(db, tenantId))
+})
+
+app.post("/settings", async (c) => {
+  const parsed = UpdateSettingsRequestSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) {
+    return c.json({ error: "invalid request body", retryable: false }, 400)
+  }
+  const saved = await upsertSettings(db, parsed.data.tenantId, {
+    persona: parsed.data.persona,
+    restrictions: parsed.data.restrictions,
+  })
+  return c.json(saved)
 })
 
 const port = Number(process.env.PORT ?? 8788)

@@ -121,7 +121,7 @@ export function UploadDialog({
           ) : (
             <button
               className={cn(
-                "flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center transition-colors",
+                "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center transition-colors disabled:cursor-not-allowed",
                 isDragging ? "border-primary bg-accent" : "border-input hover:bg-accent/50"
               )}
               disabled={isUploading}

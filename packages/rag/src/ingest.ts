@@ -70,7 +70,7 @@ export async function* ingest(
      * at the first `upsertPage` so nothing is crawled or embedded first.
      */
     const model = embeddingModelId()
-    const stored = store.indexModel(options.tenantId)
+    const stored = await store.indexModel(options.tenantId)
     if (stored && stored !== model) {
       yield {
         kind: "error",
@@ -78,7 +78,7 @@ export async function* ingest(
       }
       return
     }
-    store.setIndexModel(options.tenantId, model)
+    await store.setIndexModel(options.tenantId, model)
 
     yield { kind: "start", origin: new URL(options.url).origin }
 
@@ -97,7 +97,7 @@ export async function* ingest(
 
       // The cheap exit. Compare before chunking, not after: chunking is free
       // but embedding is not, and a hash match means neither is needed.
-      if (store.pageHash(options.tenantId, page.url) === page.hash) {
+      if ((await store.pageHash(options.tenantId, page.url)) === page.hash) {
         unchanged++
         yield { kind: "unchanged", url: page.url, done: pages + unchanged }
         continue
@@ -112,7 +112,7 @@ export async function* ingest(
 
       const embedded = await embedChunks(pageChunks, undefined, options.signal)
       tokens += embedded.tokens
-      store.upsertPage(options.tenantId, page, embedded.chunks)
+      await store.upsertPage(options.tenantId, page, embedded.chunks)
 
       pages++
       chunks += embedded.chunks.length
@@ -126,7 +126,7 @@ export async function* ingest(
     }
 
     const removed = options.prune
-      ? store.removePagesNotIn(options.tenantId, seen)
+      ? await store.removePagesNotIn(options.tenantId, seen)
       : 0
 
     yield {

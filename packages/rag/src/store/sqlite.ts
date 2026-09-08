@@ -30,6 +30,7 @@ import type {
   SourceStats,
   Store,
 } from "../types"
+import { groupPagesByOrigin } from "./stats"
 
 type ChunkRow = {
   id: string
@@ -181,14 +182,14 @@ export class SqliteStore implements Store {
     }
   }
 
-  indexModel(tenantId: string): string | undefined {
+  async indexModel(tenantId: string): Promise<string | undefined> {
     const row = this.db
       .prepare("SELECT embedding_model FROM indexes WHERE tenant_id = ?")
       .get(tenantId) as { embedding_model: string } | undefined
     return row?.embedding_model
   }
 
-  setIndexModel(tenantId: string, model: string): void {
+  async setIndexModel(tenantId: string, model: string): Promise<void> {
     this.db
       .prepare(
         `INSERT INTO indexes (tenant_id, embedding_model, updated_at)
@@ -200,11 +201,15 @@ export class SqliteStore implements Store {
       .run(tenantId, model, Date.now())
   }
 
-  upsertPage(tenantId: string, page: Page, chunks: EmbeddedChunk[]): void {
+  async upsertPage(
+    tenantId: string,
+    page: Page,
+    chunks: EmbeddedChunk[]
+  ): Promise<void> {
     // One transaction: a half-written page would leave chunks pointing at a
     // hash that says they are current, and the next ingest would skip it.
     this.db.transaction(() => {
-      this.deletePage(tenantId, page.url)
+      this.deletePageSync(tenantId, page.url)
       this.db
         .prepare(
           `INSERT INTO pages (tenant_id, url, title, hash, fetched_at)
@@ -253,11 +258,14 @@ export class SqliteStore implements Store {
   }
 
   /**
-   * Public so `packages/backend`'s document-delete endpoint can remove a
-   * single upload's chunks directly, without going through the crawl-pruning
-   * path (`removePagesNotIn`) or wiping the whole tenant (`clear`).
+   * The synchronous body every deletion path shares. Kept private and
+   * separate from the public, async `deletePage` so it can be called
+   * straight from inside a `this.db.transaction(...)` callback — those must
+   * stay synchronous for better-sqlite3, and awaiting the public method
+   * there would just be awaiting an already-resolved promise around the
+   * same synchronous work, for no benefit.
    */
-  deletePage(tenantId: string, url: string): void {
+  private deletePageSync(tenantId: string, url: string): void {
     this.db
       .prepare(
         `DELETE FROM chunk_fts WHERE tenant_id = ? AND chunk_id IN
@@ -272,14 +280,40 @@ export class SqliteStore implements Store {
       .run(tenantId, url)
   }
 
-  pageHash(tenantId: string, url: string): string | undefined {
+  /**
+   * Public so `packages/backend`'s document-delete endpoint can remove a
+   * single upload's chunks directly, without going through the crawl-pruning
+   * path (`removePagesNotIn`) or wiping the whole tenant (`clear`).
+   */
+  async deletePage(tenantId: string, url: string): Promise<void> {
+    this.deletePageSync(tenantId, url)
+    this.indexes.delete(tenantId)
+  }
+
+  /** Removes every page under one crawled site in a single transaction —
+   *  the Links dashboard's per-source delete. */
+  async deletePagesByOrigin(tenantId: string, origin: string): Promise<number> {
+    const existing = this.db
+      .prepare("SELECT url FROM pages WHERE tenant_id = ?")
+      .all(tenantId) as { url: string }[]
+    const matching = existing.filter(({ url }) => url.startsWith(origin))
+    if (!matching.length) return 0
+
+    this.db.transaction(() => {
+      for (const { url } of matching) this.deletePageSync(tenantId, url)
+    })()
+    this.indexes.delete(tenantId)
+    return matching.length
+  }
+
+  async pageHash(tenantId: string, url: string): Promise<string | undefined> {
     const row = this.db
       .prepare("SELECT hash FROM pages WHERE tenant_id = ? AND url = ?")
       .get(tenantId, url) as { hash: string } | undefined
     return row?.hash
   }
 
-  removePagesNotIn(tenantId: string, urls: string[]): number {
+  async removePagesNotIn(tenantId: string, urls: string[]): Promise<number> {
     const keep = new Set(urls)
     const existing = this.db
       .prepare("SELECT url FROM pages WHERE tenant_id = ?")
@@ -291,7 +325,7 @@ export class SqliteStore implements Store {
     // refresh that prunes hundreds of pages otherwise pays a WAL fsync per
     // statement instead of per run, the same reasoning `upsertPage` follows.
     this.db.transaction(() => {
-      for (const { url } of stale) this.deletePage(tenantId, url)
+      for (const { url } of stale) this.deletePageSync(tenantId, url)
     })()
     this.indexes.delete(tenantId)
     return stale.length
@@ -319,7 +353,11 @@ export class SqliteStore implements Store {
     return index
   }
 
-  searchVector(tenantId: string, query: Float32Array, limit: number): Scored[] {
+  async searchVector(
+    tenantId: string,
+    query: Float32Array,
+    limit: number
+  ): Promise<Scored[]> {
     const { ids, vectors } = this.index(tenantId)
     const scored: { id: string; score: number }[] = []
     for (let i = 0; i < ids.length; i++) {
@@ -343,7 +381,11 @@ export class SqliteStore implements Store {
       .map((t) => ({ chunk: byId.get(t.id)!, score: t.score }))
   }
 
-  searchKeyword(tenantId: string, query: string, limit: number): Scored[] {
+  async searchKeyword(
+    tenantId: string,
+    query: string,
+    limit: number
+  ): Promise<Scored[]> {
     // FTS5 has its own query syntax, and a visitor's question is not written
     // in it — an apostrophe or a stray `*` is a syntax error, not a search.
     // Reduced to quoted terms OR'd together, which is what a question means.
@@ -381,43 +423,43 @@ export class SqliteStore implements Store {
     }
   }
 
-  stats(tenantId?: string): SourceStats[] {
+  /** One row per (tenant, origin) — see `groupPagesByOrigin` for the
+   *  grouping rules this follows. */
+  async stats(tenantId?: string): Promise<SourceStats[]> {
     const rows = this.db
       .prepare(
-        `SELECT p.tenant_id,
-                MIN(p.url) AS url,
-                COUNT(DISTINCT p.url) AS pages,
-                (SELECT COUNT(*) FROM chunks c WHERE c.tenant_id = p.tenant_id) AS chunks,
-                MAX(p.fetched_at) AS last
+        `SELECT p.tenant_id, p.url, p.fetched_at,
+                (SELECT COUNT(*) FROM chunks c WHERE c.tenant_id = p.tenant_id AND c.url = p.url) AS chunks
          FROM pages p
-         ${tenantId ? "WHERE p.tenant_id = ?" : ""}
-         GROUP BY p.tenant_id`
+         ${tenantId ? "WHERE p.tenant_id = ?" : ""}`
       )
       .all(...(tenantId ? [tenantId] : [])) as {
       tenant_id: string
       url: string
-      pages: number
+      fetched_at: number
       chunks: number
-      last: number
     }[]
 
-    return rows.map((r) => ({
-      tenantId: r.tenant_id,
-      embeddingModel: this.indexModel(r.tenant_id),
-      origin: (() => {
-        try {
-          return new URL(r.url).origin
-        } catch {
-          return r.url
-        }
-      })(),
-      pages: r.pages,
-      chunks: r.chunks,
-      lastIngestedAt: r.last,
-    }))
+    const buckets = groupPagesByOrigin(
+      rows.map((r) => ({
+        tenantId: r.tenant_id,
+        url: r.url,
+        fetchedAt: r.fetched_at,
+        chunks: r.chunks,
+      }))
+    )
+
+    const out: SourceStats[] = []
+    for (const bucket of buckets) {
+      out.push({
+        ...bucket,
+        embeddingModel: await this.indexModel(bucket.tenantId),
+      })
+    }
+    return out
   }
 
-  clear(tenantId: string): void {
+  async clear(tenantId: string): Promise<void> {
     this.db.prepare("DELETE FROM chunk_fts WHERE tenant_id = ?").run(tenantId)
     this.db.prepare("DELETE FROM chunks WHERE tenant_id = ?").run(tenantId)
     this.db.prepare("DELETE FROM pages WHERE tenant_id = ?").run(tenantId)
@@ -428,7 +470,7 @@ export class SqliteStore implements Store {
     this.indexes.delete(tenantId)
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.db.close()
   }
 }

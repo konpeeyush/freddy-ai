@@ -244,7 +244,7 @@ function CarouselArrow({
       aria-hidden={!show}
       aria-label={direction === "left" ? "Scroll left" : "Scroll right"}
       className={cn(
-        "absolute top-1/2 z-10 -translate-y-1/2 rounded-full p-1.5",
+        "absolute top-1/2 z-10 -translate-y-1/2 cursor-pointer rounded-full p-1.5",
         "bg-background/90 text-foreground shadow-md ring-1 ring-border backdrop-blur",
         "transition-opacity duration-150",
         direction === "left" ? "left-1" : "right-1",

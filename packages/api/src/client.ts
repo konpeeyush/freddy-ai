@@ -5,16 +5,21 @@ import {
   AppendMessageResponseSchema,
   ChatErrorSchema,
   DEFAULT_TENANT,
+  IngestEventSchema,
   ListConversationsResponseSchema,
   ListDocumentsResponseSchema,
   PollMessagesResponseSchema,
+  RagSourcesResponseSchema,
+  TenantSettingsSchema,
   UploadDocumentResponseSchema,
   WidgetEnvelopeSchema,
   type ChatMessage,
   type ClientTool,
   type Conversation,
   type ConversationStatus,
+  type IngestEvent,
   type StreamEvent,
+  type TenantSettings,
 } from "./schema"
 
 /**
@@ -480,6 +485,206 @@ export async function deleteDocument(
     `${options.baseUrl}/documents/${documentId}?${params}`,
     { method: "DELETE" },
     (data) => data as { ok: true },
+    signal
+  )
+}
+
+/* =========================================================================
+ * Links — crawling a site into the knowledge base, alongside the document
+ * upload path above. `ingestUrl` is the one streaming call in this file
+ * outside `streamChat`; the rest are plain request/response.
+ * ========================================================================= */
+
+/**
+ * Reads a server-sent event stream as parsed, schema-validated objects.
+ *
+ * Hand-rolled rather than `EventSource`, which only issues GETs and so
+ * cannot carry the ingest request in a body. The buffering matters: a chunk
+ * boundary lands mid-event often enough that parsing per-read rather than
+ * per-event drops roughly one event in twenty, which would show up as a
+ * progress count that skips numbers. Ported from the same logic in
+ * `apps/chatbot/dev/rag.ts`, generalized to validate each frame against a
+ * schema rather than trusting the JSON as-is.
+ */
+async function* readSseEvents<T>(
+  response: Response,
+  parse: (data: unknown) => T,
+  signal?: AbortSignal
+): AsyncGenerator<T> {
+  const reader = response.body?.getReader()
+  if (!reader) return
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  try {
+    while (!signal?.aborted) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      let boundary = buffer.indexOf("\n\n")
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        boundary = buffer.indexOf("\n\n")
+
+        const line = frame
+          .split("\n")
+          .find((l) => l.startsWith("data:"))
+          ?.slice(5)
+          .trim()
+        if (!line) continue
+        try {
+          yield parse(JSON.parse(line))
+        } catch {
+          // A truncated frame, or one that fails validation, is not worth
+          // aborting a crawl over.
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {})
+  }
+}
+
+export type IngestUrlOptions = {
+  baseUrl: string
+  url: string
+  tenantId?: string
+  maxPages?: number
+  prune?: boolean
+}
+
+/**
+ * Crawls and indexes a site, yielding progress events as they stream in.
+ *
+ * Unlike every other call in this file, a non-2xx response here is reported
+ * as one final `{kind: "error"}` event rather than a thrown
+ * `ChatRequestError` — the server can 400 before ever opening the SSE
+ * stream (a malformed body), and folding that into the same event union a
+ * caller already switches over means one code path handles both, instead of
+ * a try/catch wrapped around the whole generator.
+ */
+export async function* ingestUrl(
+  options: IngestUrlOptions,
+  signal?: AbortSignal
+): AsyncGenerator<IngestEvent> {
+  let response: Response
+  try {
+    response = await fetch(`${options.baseUrl}/rag/ingest`, {
+      ...jsonInit("POST", {
+        url: options.url,
+        tenantId: options.tenantId ?? DEFAULT_TENANT,
+        maxPages: options.maxPages,
+        prune: options.prune,
+      }),
+      signal,
+    })
+  } catch (cause) {
+    if (signal?.aborted) return
+    yield {
+      kind: "error",
+      message: cause instanceof Error ? cause.message : "network error",
+    }
+    return
+  }
+
+  if (!response.ok) {
+    const parsed = ChatErrorSchema.safeParse(
+      await response.json().catch(() => null)
+    )
+    yield {
+      kind: "error",
+      message: parsed.success
+        ? parsed.data.error
+        : `request failed (${response.status})`,
+    }
+    return
+  }
+
+  yield* readSseEvents(response, (data) => IngestEventSchema.parse(data), signal)
+}
+
+/** Stops an ingest mid-crawl. Idempotent — cancelling nothing is not an
+ *  error, it just reports `cancelled: false`. */
+export async function cancelIngest(
+  options: { baseUrl: string; tenantId?: string },
+  signal?: AbortSignal
+) {
+  return request(
+    `${options.baseUrl}/rag/cancel`,
+    jsonInit("POST", { tenantId: options.tenantId ?? DEFAULT_TENANT }),
+    (data) => data as { cancelled: boolean },
+    signal
+  )
+}
+
+/** What has been crawled. `tenantId` omitted asks for every tenant, not the
+ *  default one — matches `GET /rag/sources`'s own semantics. */
+export async function listSources(
+  options: { baseUrl: string; tenantId?: string },
+  signal?: AbortSignal
+) {
+  const params = new URLSearchParams()
+  if (options.tenantId) params.set("tenantId", options.tenantId)
+  const query = params.toString()
+  return request(
+    `${options.baseUrl}/rag/sources${query ? `?${query}` : ""}`,
+    { method: "GET" },
+    (data) => RagSourcesResponseSchema.parse(data),
+    signal
+  )
+}
+
+/** Removes one crawled site. Distinct from clearing a whole tenant's
+ *  knowledge base — everything else it holds (other sites, uploaded
+ *  documents) is left alone. */
+export async function deleteSource(
+  options: { baseUrl: string; origin: string; tenantId?: string },
+  signal?: AbortSignal
+) {
+  return request(
+    `${options.baseUrl}/rag/sources/delete`,
+    jsonInit("POST", {
+      origin: options.origin,
+      tenantId: options.tenantId ?? DEFAULT_TENANT,
+    }),
+    (data) => data as { ok: true; removed: number },
+    signal
+  )
+}
+
+/* =========================================================================
+ * Settings — the persona/restrictions `/chat` layers onto its system
+ * prompt for every turn.
+ * ========================================================================= */
+
+export async function getSettings(
+  options: { baseUrl: string; tenantId?: string },
+  signal?: AbortSignal
+): Promise<TenantSettings> {
+  const params = new URLSearchParams()
+  params.set("tenantId", options.tenantId ?? DEFAULT_TENANT)
+  return request(
+    `${options.baseUrl}/settings?${params}`,
+    { method: "GET" },
+    (data) => TenantSettingsSchema.parse(data),
+    signal
+  )
+}
+
+export async function updateSettings(
+  options: { baseUrl: string; tenantId?: string; persona: string; restrictions: string },
+  signal?: AbortSignal
+): Promise<TenantSettings> {
+  return request(
+    `${options.baseUrl}/settings`,
+    jsonInit("POST", {
+      tenantId: options.tenantId ?? DEFAULT_TENANT,
+      persona: options.persona,
+      restrictions: options.restrictions,
+    }),
+    (data) => TenantSettingsSchema.parse(data),
     signal
   )
 }

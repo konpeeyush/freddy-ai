@@ -92,7 +92,7 @@ export async function search(
    * unrelated passages that the model then cites as fact. Failing loudly is
    * the only safe behaviour, and doing it first saves a pointless round trip.
    */
-  const stored = store.indexModel(tenantId)
+  const stored = await store.indexModel(tenantId)
   const current = embeddingModelId()
   if (stored && stored !== current) {
     throw new EmbeddingModelMismatch(stored, current)
@@ -100,10 +100,15 @@ export async function search(
 
   const embedding = await embedQuery(query, opts.signal)
 
-  const vector = store
-    .searchVector(tenantId, embedding, opts.candidates)
-    .filter((entry) => entry.score >= opts.minSimilarity)
-  const keyword = store.searchKeyword(tenantId, query, opts.candidates)
+  const vectorCandidates = await store.searchVector(
+    tenantId,
+    embedding,
+    opts.candidates
+  )
+  const vector = vectorCandidates.filter(
+    (entry) => entry.score >= opts.minSimilarity
+  )
+  const keyword = await store.searchKeyword(tenantId, query, opts.candidates)
 
   return fuse(vector, keyword, opts.limit)
 }

@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3"
+import type { DbAdapter } from "./adapter"
 
 import type {
   ConversationStatus,
@@ -65,21 +65,22 @@ function decodeCursor(cursor: string): { updatedAt: number; id: string } {
   return { updatedAt: Number(ts), id: rest.join(":") }
 }
 
-export function getConversation(
-  db: Database.Database,
+export async function getConversation(
+  db: DbAdapter,
   tenantId: string,
   id: string
-): ConversationRow | undefined {
-  return db
-    .prepare("SELECT * FROM conversations WHERE tenant_id = ? AND id = ?")
-    .get(tenantId, id) as ConversationRow | undefined
+): Promise<ConversationRow | undefined> {
+  return db.get<ConversationRow>(
+    "SELECT * FROM conversations WHERE tenant_id = ? AND id = ?",
+    [tenantId, id]
+  )
 }
 
-export function listConversations(
-  db: Database.Database,
+export async function listConversations(
+  db: DbAdapter,
   tenantId: string,
   options: { status?: ConversationStatus; cursor?: string; limit: number }
-): { items: ConversationRow[]; nextCursor?: string } {
+): Promise<{ items: ConversationRow[]; nextCursor?: string }> {
   const conditions = ["tenant_id = ?"]
   const params: (string | number)[] = [tenantId]
 
@@ -96,12 +97,11 @@ export function listConversations(
 
   // One extra row fetched, never returned, purely to know whether a next
   // page exists without a second COUNT query.
-  const rows = db
-    .prepare(
-      `SELECT * FROM conversations WHERE ${conditions.join(" AND ")}
-       ORDER BY updated_at DESC, id DESC LIMIT ?`
-    )
-    .all(...params, options.limit + 1) as ConversationRow[]
+  const rows = await db.all<ConversationRow>(
+    `SELECT * FROM conversations WHERE ${conditions.join(" AND ")}
+     ORDER BY updated_at DESC, id DESC LIMIT ?`,
+    [...params, options.limit + 1]
+  )
 
   const hasMore = rows.length > options.limit
   const items = hasMore ? rows.slice(0, options.limit) : rows
@@ -113,40 +113,37 @@ export function listConversations(
   }
 }
 
-export function updateConversationStatus(
-  db: Database.Database,
+export async function updateConversationStatus(
+  db: DbAdapter,
   tenantId: string,
   id: string,
   status: ConversationStatus
-): boolean {
-  const result = db
-    .prepare(
-      "UPDATE conversations SET status = ?, updated_at = ? WHERE tenant_id = ? AND id = ?"
-    )
-    .run(status, Date.now(), tenantId, id)
+): Promise<boolean> {
+  const result = await db.run(
+    "UPDATE conversations SET status = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
+    [status, Date.now(), tenantId, id]
+  )
   return result.changes > 0
 }
 
-export function getMessagesSince(
-  db: Database.Database,
+export async function getMessagesSince(
+  db: DbAdapter,
   tenantId: string,
   conversationId: string,
   after?: number
-): MessageRow[] {
+): Promise<MessageRow[]> {
   if (after !== undefined) {
-    return db
-      .prepare(
-        `SELECT * FROM messages WHERE tenant_id = ? AND conversation_id = ?
-         AND created_at > ? ORDER BY created_at ASC`
-      )
-      .all(tenantId, conversationId, after) as MessageRow[]
-  }
-  return db
-    .prepare(
+    return db.all<MessageRow>(
       `SELECT * FROM messages WHERE tenant_id = ? AND conversation_id = ?
-       ORDER BY created_at ASC`
+       AND created_at > ? ORDER BY created_at ASC`,
+      [tenantId, conversationId, after]
     )
-    .all(tenantId, conversationId) as MessageRow[]
+  }
+  return db.all<MessageRow>(
+    `SELECT * FROM messages WHERE tenant_id = ? AND conversation_id = ?
+     ORDER BY created_at ASC`,
+    [tenantId, conversationId]
+  )
 }
 
 /**
@@ -157,8 +154,8 @@ export function getMessagesSince(
  * twice — `ON CONFLICT DO NOTHING` rather than an update, since a message,
  * once sent, never changes.
  */
-export function appendMessage(
-  db: Database.Database,
+export async function appendMessage(
+  db: DbAdapter,
   tenantId: string,
   conversationId: string,
   message: {
@@ -171,11 +168,11 @@ export function appendMessage(
     createdAt?: number
   },
   visitorMeta?: VisitorMeta
-): ConversationRow {
+): Promise<ConversationRow> {
   const now = Date.now()
   const createdAt = message.createdAt ?? now
 
-  db.prepare(
+  await db.run(
     `INSERT INTO conversations
        (id, tenant_id, status, visitor_meta, last_message_preview, last_message_at, created_at, updated_at)
      VALUES (?, ?, 'unresolved', ?, ?, ?, ?, ?)
@@ -185,35 +182,37 @@ export function appendMessage(
        updated_at = excluded.updated_at,
        -- Refreshed when a later message brings a newer one (the visitor
        -- navigated to a different page mid-conversation), kept otherwise.
-       visitor_meta = COALESCE(excluded.visitor_meta, conversations.visitor_meta)`
-  ).run(
-    conversationId,
-    tenantId,
-    visitorMeta ? JSON.stringify(visitorMeta) : null,
-    preview(message.text),
-    createdAt,
-    now,
-    now
+       visitor_meta = COALESCE(excluded.visitor_meta, conversations.visitor_meta)`,
+    [
+      conversationId,
+      tenantId,
+      visitorMeta ? JSON.stringify(visitorMeta) : null,
+      preview(message.text),
+      createdAt,
+      now,
+      now,
+    ]
   )
 
-  db.prepare(
+  await db.run(
     `INSERT INTO messages
        (id, conversation_id, tenant_id, role, sender, text, parts, sources, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (tenant_id, conversation_id, id) DO NOTHING`
-  ).run(
-    message.id,
-    conversationId,
-    tenantId,
-    message.role,
-    message.sender,
-    message.text,
-    message.parts ? JSON.stringify(message.parts) : null,
-    message.sources ? JSON.stringify(message.sources) : null,
-    createdAt
+     ON CONFLICT (tenant_id, conversation_id, id) DO NOTHING`,
+    [
+      message.id,
+      conversationId,
+      tenantId,
+      message.role,
+      message.sender,
+      message.text,
+      message.parts ? JSON.stringify(message.parts) : null,
+      message.sources ? JSON.stringify(message.sources) : null,
+      createdAt,
+    ]
   )
 
   // Re-read rather than constructed in memory: the row above may have hit
   // the UPDATE branch, so this is the authoritative post-write state.
-  return getConversation(db, tenantId, conversationId)!
+  return (await getConversation(db, tenantId, conversationId))!
 }

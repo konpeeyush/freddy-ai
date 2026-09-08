@@ -133,6 +133,13 @@ export async function ragSearch(
   }))
 }
 
-export function ragSources(tenantId?: string): RagSource[] {
+export async function ragSources(tenantId?: string): Promise<RagSource[]> {
   return ragStore.stats(tenantId)
+}
+
+/** Removes every page under one crawled site — the Links dashboard's
+ *  per-source delete. Unlike `/rag/clear`, this leaves the rest of the
+ *  tenant's knowledge base (other sites, uploaded documents) untouched. */
+export async function deleteSource(tenantId: string, origin: string): Promise<number> {
+  return ragStore.deletePagesByOrigin(tenantId, origin)
 }

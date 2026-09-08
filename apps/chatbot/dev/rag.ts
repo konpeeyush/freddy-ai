@@ -27,6 +27,7 @@ import type { WidgetConfig } from "../src/lib/config"
 import {
   loadRagSource,
   saveRagSource,
+  RAG_SOURCE_DEFAULTS,
   type RagSourceSettings,
 } from "./rag-source"
 import type { RagHit, RagSource } from "@workspace/api"
@@ -435,7 +436,7 @@ export function renderRag(
 
     const data = new FormData(form)
     const url = String(data.get("url") ?? "").trim()
-    const tenantId = String(data.get("tenantId") ?? "").trim() || "playground"
+    const tenantId = String(data.get("tenantId") ?? "").trim() || RAG_SOURCE_DEFAULTS.tenantId
     const maxPages = Number(data.get("maxPages") ?? 40)
     const prune = data.get("prune") === "on"
 

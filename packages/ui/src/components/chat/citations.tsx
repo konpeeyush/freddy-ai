@@ -348,7 +348,7 @@ export function Citations({
         aria-expanded={currentOpen}
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
-        className="group -ml-1 flex min-h-8 items-center gap-2 rounded-lg px-1 text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group -ml-1 flex min-h-8 cursor-pointer items-center gap-2 rounded-lg px-1 text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <CitationStack citations={citations} limit={3} />
         <span className="font-medium">{title}</span>

@@ -6,6 +6,8 @@ import { ConversationsEmptyView } from "@/modules/conversations/conversations-em
 import { ConversationIdLayout } from "@/modules/conversations/conversation-id-layout"
 import { ConversationIdView } from "@/modules/conversations/conversation-id-view"
 import { FilesView } from "@/modules/files/files-view"
+import { LinksView } from "@/modules/links/links-view"
+import { SettingsView } from "@/modules/settings/settings-view"
 
 function ConversationIdRoute() {
   const { conversationId } = useParams()
@@ -30,6 +32,8 @@ export function App() {
         </Route>
 
         <Route path="/files" element={<FilesView />} />
+        <Route path="/links" element={<LinksView />} />
+        <Route path="/settings" element={<SettingsView />} />
 
         <Route path="*" element={<Navigate to="/conversations" replace />} />
       </Route>

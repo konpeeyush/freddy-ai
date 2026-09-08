@@ -517,6 +517,38 @@ export const RagIngestRequestSchema = z.object({
 })
 export type RagIngestRequest = z.infer<typeof RagIngestRequestSchema>
 
+/**
+ * One SSE frame from `POST /rag/ingest`. Mirrors `IngestEvent` in
+ * `@workspace/rag`, declared here rather than imported: that package opens
+ * SQLite (or a Postgres pool) and reads the filesystem, so importing its
+ * types would pull server-only code into a browser bundle for the sake of a
+ * union. Kept in sync by hand — see `packages/rag/src/ingest.ts`.
+ */
+export const IngestEventSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("start"), origin: z.string() }),
+  z.object({
+    kind: z.literal("page"),
+    url: z.string(),
+    title: z.string(),
+    chunks: z.number(),
+    done: z.number(),
+  }),
+  z.object({ kind: z.literal("skip"), url: z.string(), reason: z.string() }),
+  z.object({ kind: z.literal("unchanged"), url: z.string(), done: z.number() }),
+  z.object({
+    kind: z.literal("done"),
+    pages: z.number(),
+    chunks: z.number(),
+    skipped: z.number(),
+    unchanged: z.number(),
+    removed: z.number(),
+    tokens: z.number(),
+    ms: z.number(),
+  }),
+  z.object({ kind: z.literal("error"), message: z.string() }),
+])
+export type IngestEvent = z.infer<typeof IngestEventSchema>
+
 export const RagSearchRequestSchema = z.object({
   query: z.string().min(1).max(1000),
   tenantId: TenantIdSchema.default(DEFAULT_TENANT),
@@ -547,6 +579,19 @@ export const RagSourceSchema = z.object({
   lastIngestedAt: z.number(),
 })
 export type RagSource = z.infer<typeof RagSourceSchema>
+
+export const RagSourcesResponseSchema = z.object({
+  sources: z.array(RagSourceSchema),
+  ingesting: z.boolean(),
+})
+
+/** The Links dashboard's per-site delete — distinct from `/rag/clear`,
+ *  which empties an entire tenant rather than one crawled origin. */
+export const DeleteSourceRequestSchema = z.object({
+  origin: z.string().min(1),
+  tenantId: TenantIdSchema.default(DEFAULT_TENANT),
+})
+export type DeleteSourceRequest = z.infer<typeof DeleteSourceRequestSchema>
 
 /* =========================================================================
  * Conversations, messages, documents.
@@ -697,3 +742,24 @@ export const UploadDocumentResponseSchema = z.object({
 export type UploadDocumentResponse = z.infer<
   typeof UploadDocumentResponseSchema
 >
+
+/* =========================================================================
+ * Settings — per-tenant persona and restrictions, layered onto `/chat`'s
+ * system prompt for every turn (additive, never replacing it — see
+ * `packages/backend/src/index.ts`).
+ * ========================================================================= */
+
+export const TenantSettingsSchema = z.object({
+  persona: z.string(),
+  restrictions: z.string(),
+})
+export type TenantSettings = z.infer<typeof TenantSettingsSchema>
+
+export const UpdateSettingsRequestSchema = z.object({
+  tenantId: TenantIdSchema.default(DEFAULT_TENANT),
+  // Generous enough for a real persona paragraph plus a restrictions list,
+  // without letting a runaway text area blow up the prompt budget.
+  persona: z.string().max(4000),
+  restrictions: z.string().max(4000),
+})
+export type UpdateSettingsRequest = z.infer<typeof UpdateSettingsRequestSchema>

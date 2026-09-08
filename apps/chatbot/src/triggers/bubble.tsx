@@ -20,7 +20,7 @@ export function Bubble({
       aria-label={open ? "Close chat" : "Open chat"}
       aria-expanded={open}
       className={cn(
-        "pointer-events-auto flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform duration-200 hover:scale-105 active:scale-95",
+        "pointer-events-auto flex size-14 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform duration-200 hover:scale-105 active:scale-95",
         className
       )}
     >

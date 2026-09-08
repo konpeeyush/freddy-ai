@@ -45,7 +45,7 @@ function SourcesTrigger({
       onClick={onToggle}
       whileTap={reduce ? undefined : { scale: 0.96 }}
       transition={SPRING_PRESS}
-      className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       <CitationStack citations={citations} limit={3} size="xs" />
       <span className="text-xs font-medium tabular-nums">

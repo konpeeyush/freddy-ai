@@ -95,9 +95,9 @@ export function Button({ props }: PrimitiveProps) {
         aria-busy={busy}
         style={{ width: width ?? (block ? "100%" : undefined) }}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-lg font-medium transition-all outline-none select-none",
+          "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg font-medium transition-all outline-none select-none",
           "focus-visible:ring-2 focus-visible:ring-ring/50",
-          "disabled:pointer-events-none disabled:opacity-60",
+          "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-60",
           "active:translate-y-px",
           token(BUTTON_SIZE, props.size, BUTTON_SIZE.md),
           token(BUTTON_COLOR, props.color, BUTTON_COLOR.primary)

@@ -12,6 +12,8 @@
  * `WidgetConfig` for why letting a page do so would be a hole.
  */
 
+import { DEFAULT_TENANT } from "@workspace/api"
+
 const STORAGE_KEY = "widget-rag-source"
 
 export type RagSourceSettings = {
@@ -24,7 +26,7 @@ export type RagSourceSettings = {
  *  a request that names no namespace at all. */
 export const RAG_SOURCE_DEFAULTS: RagSourceSettings = {
   url: "",
-  tenantId: "playground",
+  tenantId: DEFAULT_TENANT,
   maxPages: 40,
 }
 

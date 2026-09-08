@@ -378,7 +378,7 @@ function MessageList({
                 <button
                   type="button"
                   onClick={onRetry}
-                  className="shrink-0 font-medium underline underline-offset-2 hover:no-underline"
+                  className="shrink-0 cursor-pointer font-medium underline underline-offset-2 hover:no-underline"
                 >
                   Retry
                 </button>

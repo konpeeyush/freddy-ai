@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: freddy-backend
+    runtime: node
+    plan: free
+    # No `rootDir`: install has to run from the workspace root so pnpm can
+    # resolve the `workspace:*` deps (@workspace/api, @workspace/rag) that
+    # packages/backend depends on — a rootDir here would install it in
+    # isolation and fail. `pnpm --filter` targets the backend specifically
+    # for the actual start command instead.
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @workspace/backend start
+    envVars:
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
