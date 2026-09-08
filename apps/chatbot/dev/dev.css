@@ -1,0 +1,1848 @@
+/*
+ * Dev-harness chrome only. Never bundled into widget.js — the shipped widget
+ * styles live in src/styles.css and are injected into the shadow root.
+ */
+:root {
+  color-scheme: dark;
+  --bg: #1f1e1d;
+  --surface: #262524;
+  --surface-hover: #2e2d2b;
+  --border: #3a3836;
+  --text: #f0eee9;
+  --muted: #a8a29a;
+  --faint: #78716a;
+  --accent: #c96442;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.6 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in oklab, var(--bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.dot {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 5px;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  color: #fff;
+}
+
+nav {
+  display: flex;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+
+nav a {
+  padding: 0.3125rem 0.6875rem;
+  border-radius: 7px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.8125rem;
+}
+
+nav a:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+nav a[aria-current] {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* A visible reminder that this is the HMR harness, not the built bundle. */
+.hmr {
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  padding: 0.1875rem 0.4375rem;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+.wrap {
+  max-width: 44rem;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  margin: 0 0 0.5rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.625rem;
+  text-transform: capitalize;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.lede.small {
+  font-size: 0.8125rem;
+  margin-top: 2rem;
+}
+
+code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.125rem 0.375rem;
+  border-radius: 5px;
+  font-size: 0.8125em;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.grid {
+  display: grid;
+  gap: 0.875rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  margin-top: 1.75rem;
+}
+
+.card {
+  padding: 1.125rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.card:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  transform: translateY(-1px);
+}
+
+.card h2 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 0.375rem;
+}
+
+.card p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0;
+}
+
+.actions button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.4375rem 0.875rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.actions button:hover {
+  background: var(--surface-hover);
+  border-color: var(--faint);
+}
+
+/*
+ * Inline route: a docked side-pane, so the page itself must not scroll.
+ *
+ * The flex column lives on #dev-root, not on <body> — same reasoning as the
+ * playground route below: the harness renders its chrome into that wrapper,
+ * so `.layout` is a grandchild of body, and putting the column on body
+ * leaves #dev-root a content-sized block that never stretches to fill it.
+ * `.layout`'s `flex: 1` would then have no flex parent to grow into, and the
+ * aside would track the transcript's height instead of the viewport.
+ */
+body:has(.layout) {
+  overflow: hidden;
+}
+
+body:has(.layout) #dev-root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+body:has(.layout) .bar {
+  /* Nothing scrolls behind it any more, and sticky would take it out of the
+     flex flow it now has to participate in. */
+  position: static;
+  flex-shrink: 0;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 23rem;
+  /* Explicit: a grid container stretched by flex still gives its implicit row
+     `auto`, which would let the dock track the widget's content height. */
+  grid-template-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.layout > .wrap {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.dock {
+  border-inline-start: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dock > div {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 52rem) {
+  /* Stacked: side by side no longer fits, so the page scrolls normally again
+     and the dock takes a fixed slice. */
+  body:has(.layout) {
+    overflow: visible;
+  }
+
+  /* Releases the viewport lock at the same element that set it. */
+  body:has(.layout) #dev-root {
+    display: block;
+    height: auto;
+  }
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+  .layout > .wrap {
+    overflow: visible;
+  }
+  .dock {
+    height: 30rem;
+    border-inline-start: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* Hostile route: the same aggressive rules the preview app uses. */
+.hostile * {
+  font-family: "Comic Sans MS", cursive !important;
+  letter-spacing: 2px !important;
+  line-height: 3 !important;
+}
+.hostile div {
+  border: 3px dashed magenta !important;
+}
+.hostile button {
+  background: lime !important;
+  color: red !important;
+  border-radius: 0 !important;
+  transform: rotate(-2deg) !important;
+  font-size: 20px !important;
+}
+.hostile p {
+  color: hotpink !important;
+  font-size: 22px !important;
+}
+.hostile h1 {
+  color: cyan !important;
+  text-shadow: 3px 3px 0 magenta !important;
+}
+
+
+/* ── Tool playground ─────────────────────────────────────────────────────
+   Controls left, widget right. The whole page is pinned to the viewport and
+   only the tool list scrolls, so the widget never moves while you work
+   through the list — the two panes are read together, and a widget that
+   scrolled out of view would defeat that. */
+
+/*
+ * The playground pins itself to the viewport.
+ *
+ * Set on <body> rather than measured from the sticky bar: a hardcoded bar
+ * height would drift the moment its padding changes. A flex column with the
+ * bar at its natural height and the grid taking the rest gets the same
+ * result and stays correct.
+ *
+ * `min-height: 0` on the grid is what makes `flex: 1` actually bind — a flex
+ * item's default `min-height: auto` refuses to shrink below its content, so
+ * without it the row grows with the tool list instead of filling the space.
+ */
+body:has(.pg) {
+  overflow: hidden;
+}
+
+/*
+ * The flex column lives on #dev-root, not on <body>.
+ *
+ * The harness renders its chrome into that wrapper, so `.pg` is a grandchild
+ * of body — putting the column on body left #dev-root as a content-sized
+ * block between them, and `flex: 1` had no flex parent to grow into. That is
+ * why the widget tracked the tool list's height instead of the viewport.
+ */
+body:has(.pg) #dev-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+body:has(.pg) .bar {
+  /* Sticky is pointless once nothing scrolls behind it, and it would take the
+     bar out of the flex flow it now needs to participate in. */
+  position: static;
+  flex-shrink: 0;
+}
+
+.pg {
+  display: grid;
+  /* 30% for the widget: enough to render an inline panel at a realistic
+     embed width, which is the point of previewing it here. */
+  grid-template-columns: 1fr 30%;
+  /*
+   * Explicit, because `flex: 1` only sizes the grid *container*. Its single
+   * implicit row still defaults to `auto`, so both panes would shrink to
+   * their content and the widget's height would track the number of tools.
+   */
+  grid-template-rows: 1fr;
+  gap: 1.5rem;
+  flex: 1;
+  padding: 1.25rem;
+  max-width: 90rem;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+/* Narrow: stack them and let the page scroll normally. Two panes side by
+   side stop being readable well before the widget stops fitting. */
+@media (max-width: 60rem) {
+  body:has(.pg) {
+    overflow: visible;
+  }
+
+  /* Releases the viewport lock at the same element that set it. */
+  body:has(.pg) #dev-root {
+    display: block;
+    height: auto;
+  }
+
+  .pg {
+    grid-template-columns: 1fr;
+    /* Back to content-sized rows: stacked, each pane should be as tall as it
+       needs to be and the page scrolls. */
+    grid-template-rows: auto auto;
+  }
+
+  .pg-panel {
+    overflow-y: visible;
+  }
+}
+
+/* The scrolling column. `min-height: 0` is load-bearing — without it a grid
+   item refuses to shrink below its content and the page scrolls instead. */
+.pg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  scrollbar-width: thin;
+}
+
+.pg-head h1 {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * The second section's heading.
+ *
+ * Smaller than the panel's own h1 and separated by a rule: sequences are a
+ * peer of the tool list, not a subsection of it, but the page still has one
+ * subject and should read with one entry point.
+ */
+.pg-head-seq {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  margin-top: 0.25rem;
+}
+
+.pg-head-seq h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.pg-try:focus-visible,
+.pg-tool summary:focus-visible,
+.pg-tool input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pg-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Collapsed by default: the list is scanned to find a tool, and five open
+   cards push the fifth off screen. The name and its widget stay visible in
+   the summary, which is what you scan by. */
+.pg-tool {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+}
+
+.pg-tool summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 0.65rem;
+}
+
+/* Safari draws its own triangle without this. */
+.pg-tool summary::-webkit-details-marker {
+  display: none;
+}
+
+.pg-tool summary:hover {
+  background: var(--surface-hover);
+}
+
+.pg-caret {
+  color: var(--faint);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.pg-tool[open] .pg-caret {
+  transform: rotate(90deg);
+}
+
+/* Keeps the summary's rounded corners from showing through the open body. */
+.pg-tool[open] summary {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.pg-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  font-weight: 550;
+  font-size: 0.88rem;
+}
+
+/* Pushed to the end of the summary so every checkbox lines up regardless of
+   how long the tool's name is. */
+.pg-tool summary input {
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The widget a tool renders. Naming it here is what makes the mapping from
+   "tool fired" to "this card appeared" legible while testing. */
+.pg-chip {
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.pg-chip-plain {
+  color: var(--faint);
+  background: color-mix(in oklab, var(--faint) 14%, transparent);
+}
+
+.pg-tool-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 0.5rem;
+  padding: 0 0.7rem 0.7rem;
+  /* Indented to the caret, so the body reads as belonging to the row. */
+  margin-left: 1rem;
+}
+
+.pg-tool-summary {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.pg-try {
+  max-width: 100%;
+  padding: 0.3rem 0.5rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--faint);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.pg-try:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
+/* Clipboard refused — the prompt is shown in full to copy by hand. */
+.pg-try-bare {
+  border-style: solid;
+  color: var(--text);
+  white-space: normal;
+}
+
+.pg-count {
+  margin: 0;
+  padding-bottom: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+/* Fixed: full height of the stage, never scrolls with the list. */
+.pg-stage {
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: var(--surface);
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-width: 60rem) {
+  .pg-stage {
+    height: 36rem;
+  }
+}
+
+.pg-stage > div {
+  height: 100%;
+}
+
+/*
+ * The tool builder.
+ *
+ * Collapsed by default and sitting under the list: it is used once per tool,
+ * whereas the list is read constantly. Open, it is the longest thing in the
+ * panel, which is also why the panel scrolls.
+ */
+
+.pg-chip-custom {
+  color: #7fb069;
+  background: color-mix(in oklab, #7fb069 16%, transparent);
+}
+
+.pg-new {
+  border-top: 1px solid var(--border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.pg-new > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.4rem 0.1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-new > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pg-new > summary:hover {
+  color: var(--text);
+}
+
+.pg-new[open] > summary {
+  color: var(--text);
+}
+
+.pg-new[open] > summary .pg-caret {
+  transform: rotate(90deg);
+}
+
+.pg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.5rem 0.1rem 0.25rem;
+}
+
+.pg-form label,
+.pg-seq-new label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pg-form label > span,
+.pg-seq-new label > span {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-form input[type="text"],
+.pg-form input:not([type]),
+.pg-form textarea,
+.pg-form select,
+.pg-seq-new textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.pg-form textarea,
+.pg-seq-new textarea {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/*
+ * The flow is written in prose, not JSON — the monospace the other textareas
+ * use is there for schemas, and it makes a sentence harder to read, not
+ * easier. Mentions still stand out, since they carry their own colour.
+ */
+.pg-seq-new textarea {
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.pg-form textarea[name="description"] {
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.pg-seq-new textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pg-form input:focus-visible,
+.pg-form textarea:focus-visible,
+.pg-form select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.pg-form small {
+  font-size: 0.7rem;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+/* Empty until something is wrong, so it takes no space in the happy path. */
+.pg-form [data-error] {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: #e06c5b;
+}
+
+.pg-form [data-error]:empty {
+  display: none;
+}
+
+.pg-form .has-error input,
+.pg-form .has-error textarea,
+.pg-form .has-error select {
+  border-color: #e06c5b;
+}
+
+.pg-radios {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.pg-radios legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-radio {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.35rem !important;
+  cursor: pointer;
+}
+
+.pg-radio span {
+  font-size: 0.78rem !important;
+  font-weight: 400 !important;
+  color: var(--text) !important;
+}
+
+.pg-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.pg-form-actions button {
+  flex: 1;
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  color: #fff;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pg-form-actions button:hover {
+  filter: brightness(1.08);
+}
+
+.pg-form-actions .pg-secondary {
+  flex: 0 0 auto;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.pg-form-actions .pg-secondary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  filter: none;
+}
+
+.pg-form-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pg-delete {
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  margin-left: 0.6rem;
+  font: inherit;
+  font-size: 0.74rem;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.pg-delete:hover {
+  color: #e06c5b;
+}
+
+/*
+ * Drafting a tool with the model.
+ *
+ * Set apart from the fields below it because it writes them: it is an input
+ * to the form rather than part of the definition being built.
+ */
+
+.pg-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.45rem;
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+}
+
+.pg-draft textarea {
+  font-family: inherit !important;
+  font-size: 0.8rem !important;
+}
+
+.pg-draft-go {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text);
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pg-draft-go:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.pg-draft-go:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.pg-draft-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pg-draft-status {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.pg-draft-status:empty {
+  display: none;
+}
+
+.pg-draft-status.is-error {
+  color: #e06c5b;
+}
+
+/*
+ * What changed in the tool set since the last turn.
+ *
+ * Sits under the count because it answers the question the count raises: not
+ * how many tools are in context, but which ones just moved.
+ */
+.pg-drift {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--accent);
+  line-height: 1.5;
+}
+
+.pg-drift:empty {
+  display: none;
+}
+
+/*
+ * Editing a shipped tool.
+ *
+ * Inside the disclosure rather than in the "New tool" form: this edits
+ * something that already exists and is toggled right above it, so the two
+ * belong together.
+ */
+
+.pg-chip-edited {
+  color: #d9a441;
+  background: color-mix(in oklab, #d9a441 16%, transparent);
+}
+
+.pg-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.15rem 0.6rem 0.7rem;
+  border-top: 1px dashed var(--border);
+  margin-top: 0.15rem;
+}
+
+.pg-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pg-edit label > span {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-edit textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text);
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  width: 100%;
+  resize: vertical;
+}
+
+.pg-edit textarea[name="schemaText"] {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.pg-edit textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.pg-edit small {
+  font-size: 0.68rem;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.pg-edit [data-edit-error] {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: #e06c5b;
+}
+
+.pg-edit [data-edit-error]:empty {
+  display: none;
+}
+
+.pg-edit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.pg-edit-actions button {
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  color: #fff;
+  padding: 0.32rem 0.7rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pg-edit-actions .pg-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.pg-edit-actions .pg-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.pg-edit-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pg-edit-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pg-edit-note {
+  color: var(--faint);
+}
+
+/*
+ * Sequences.
+ *
+ * Shares the disclosure chrome with `.pg-new` — same panel, same position in
+ * the sidebar, so the two authoring surfaces read as siblings rather than as
+ * unrelated features that happen to sit near each other.
+ */
+.pg-seq {
+  border-top: 1px solid var(--border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.pg-seq > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.4rem 0.1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-seq > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pg-seq[open] > summary .pg-caret {
+  transform: rotate(90deg);
+}
+
+.pg-seq > summary:hover,
+.pg-seq[open] > summary {
+  color: var(--text);
+}
+
+.pg-seq > .lede {
+  margin: 0.25rem 0 0.6rem;
+}
+
+.pg-seq-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pg-seq-empty {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/*
+ * A sequence row is a tool row without the checkbox — a flow is not toggled,
+ * it is started by the model like anything else. The name takes the space the
+ * checkbox would have used rather than leaving a gap where one used to be.
+ */
+.pg-seq-row > summary .pg-tool-name {
+  flex: 1;
+}
+
+
+.pg-chip-broken {
+  background: rgba(224, 108, 91, 0.16);
+  color: #e06c5b;
+}
+
+/*
+ * The steps, numbered.
+ *
+ * Ordered rather than bulleted because the order is the entire content of a
+ * sequence — a flow shown as an unordered list would misrepresent the one
+ * property it exists to guarantee.
+ */
+.pg-seq-steps {
+  align-self: stretch;
+  margin: 0 0 0.15rem;
+  padding-left: 1.1rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.pg-seq-steps .is-ask {
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.pg-seq-steps em {
+  color: var(--accent);
+  font-style: normal;
+}
+
+.pg-seq-steps .is-broken {
+  color: #e06c5b;
+  text-decoration: line-through;
+}
+
+.pg-seq-broken {
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: #e06c5b;
+  line-height: 1.45;
+}
+
+.pg-seq-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.1rem 0.25rem;
+}
+
+.pg-seq-new small {
+  font-size: 0.7rem;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.pg-seq-new kbd {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.2rem;
+}
+
+/*
+ * The @ picker.
+ *
+ * Inline under the textarea rather than floating over it: a popover anchored
+ * to a caret in a textarea needs mirror-div measuring to place, and that is a
+ * lot of machinery for a dev surface where a list directly below reads fine.
+ */
+.pg-seq-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface-hover);
+}
+
+/*
+ * An empty picker is a bare accent-coloured bar, which reads as an error the
+ * form is reporting rather than as a list with nothing in it yet. `hidden`
+ * covers the closed case; this covers the open-but-empty one.
+ */
+.pg-seq-picker:empty {
+  display: none;
+}
+
+.pg-seq-picker button {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pg-seq-picker button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pg-seq-none {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.pg-seq-go {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pg-seq-go:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.pg-seq-go:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.pg-seq-status {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.pg-seq-status:empty {
+  display: none;
+}
+
+.pg-seq-status.is-error {
+  color: #e06c5b;
+}
+
+.pg-seq-preview {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-hover);
+}
+
+/*
+ * What the compiler could not settle on its own.
+ *
+ * Given weight deliberately. The steps above usually look right, and the
+ * mistakes a compiled flow actually makes — an argument mapped to the wrong
+ * captured answer — are invisible in the step list but named here.
+ */
+.pg-seq-warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.7rem;
+  color: #d9a441;
+  line-height: 1.5;
+}
+
+/*
+ * The step editor.
+ *
+ * Structured controls rather than a text box, so the rules that keep a flow
+ * runnable can be checked against the live registry. The visual job is to
+ * make order legible — it is the content of a sequence, and a list of rows
+ * that all look alike hides the thing being edited.
+ */
+.pg-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pg-steps-label {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pg-steps-list {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pg-step {
+  counter-increment: step;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pg-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* The number is the point of the row, so it leads. */
+.pg-step-head::before {
+  content: counter(step);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.7rem;
+  color: var(--faint);
+  min-width: 1ch;
+}
+
+.pg-step-move {
+  margin-left: auto;
+  display: flex;
+  gap: 0.15rem;
+}
+
+.pg-step-move button {
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+
+.pg-step-move button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pg-step-move .pg-step-drop:hover {
+  color: #e06c5b;
+  border-color: #e06c5b;
+}
+
+.pg-step label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.pg-step label > span {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.pg-step input,
+.pg-step select,
+.pg-step textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  color: var(--text);
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
+  width: 100%;
+}
+
+.pg-step textarea,
+.pg-step select {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  resize: vertical;
+}
+
+.pg-step input:focus-visible,
+.pg-step select:focus-visible,
+.pg-step textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pg-step small {
+  font-size: 0.65rem;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.pg-step small code,
+.pg-edit-note code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--accent);
+}
+
+.pg-steps-add {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.pg-steps-add button {
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+
+.pg-steps-add button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+/*
+ * Why an edit was refused.
+ *
+ * Every problem at once, not the first: a flow wrong in three ways would
+ * otherwise take three saves to fix, each revealing the next.
+ */
+.pg-steps [data-step-error] {
+  font-size: 0.68rem;
+  font-style: normal;
+  color: #e06c5b;
+  line-height: 1.45;
+}
+
+.pg-steps [data-step-error]:empty {
+  display: none;
+}
+
+/*
+ * Retrieval page.
+ *
+ * Reuses the playground's two-pane shell (`.pg`, `.pg-panel`, `.pg-stage`) so
+ * the layout, the scrolling column and the narrow-viewport stacking are shared
+ * rather than reimplemented. What follows is only the parts that page does not
+ * have: the crawl log, the sources list and the search results.
+ */
+
+/*
+ * Three rules here exist only to win against `.pg-form`'s, which this page
+ * reuses. Each is a specificity collision rather than a disagreement about
+ * design, so they are grouped and explained together.
+ */
+
+/*
+ * The playground styles inputs by `[type="text"]` and `:not([type])`. This
+ * form has a url field and a number field, which match neither and so rendered
+ * as unstyled browser defaults — bright boxes in a dark panel.
+ */
+.pg-form input[type="url"],
+.pg-form input[type="number"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.rag-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  /* Two labels of unequal caption length would otherwise centre against each
+     other and leave their inputs a few pixels out of line. */
+  align-items: start;
+}
+
+/*
+ * A checkbox reads as a row, not as a stacked label with a caption above it.
+ *
+ * Qualified with `.pg-form` because `.pg-form label` sets a column flex and
+ * outranks a lone class — unqualified, this laid the box out centred above
+ * its own text.
+ */
+.pg-form .rag-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+}
+
+.rag-check input {
+  accent-color: var(--accent);
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+}
+
+.rag-check span {
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+
+.rag-check small {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: var(--faint);
+  line-height: 1.45;
+}
+
+.rag-progress {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.rag-counts {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.rag-counts:empty {
+  display: none;
+}
+
+.rag-counts strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Capped and scrolling. A crawl emits one line per page, and a 200-page run
+ * would otherwise push the sources list and the search box off the panel
+ * entirely — which are the two things you want next.
+ */
+.rag-log {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  max-height: 15rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-size: 0.75rem;
+}
+
+.rag-line {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.25rem 0.5rem;
+  border-radius: 5px;
+}
+
+.rag-line + .rag-line {
+  border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+}
+
+.rag-tag {
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.rag-line-page .rag-tag {
+  color: var(--accent);
+}
+
+.rag-line-error .rag-tag,
+.rag-line-stopped .rag-tag {
+  color: #e0685c;
+}
+
+/* Truncated rather than wrapped: a url is scanned for its tail, and a log
+   where every third row is three lines tall cannot be scanned at all. */
+.rag-line-text {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-meta {
+  color: var(--faint);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+/* Was unstyled block flow until a second namespace made "Indexed" a list of
+   more than one row — a bare stack with no gap read as one smeared block. */
+.rag-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rag-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  font-size: 0.8125rem;
+}
+
+/* The namespace the widget on this page is actually querying — everything
+   else in the list is indexed, but not what an answer below draws on. */
+.rag-source-active {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
+}
+
+.rag-source-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rag-source .rag-meta {
+  display: block;
+  margin-top: 0.125rem;
+}
+
+.rag-empty {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.65rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.rag-search {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rag-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.rag-search input:focus-visible,
+.rag-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rag-search button {
+  padding: 0.5rem 0.9rem;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.rag-search button:hover {
+  filter: brightness(1.08);
+}
+
+.rag-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rag-hit {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  padding: 0.7rem 0.75rem;
+}
+
+.rag-hit header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.rag-crumb {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-badges {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.rag-question {
+  margin: 0 0 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rag-text {
+  margin: 0 0 0.45rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text);
+  /* Four lines is enough to judge relevance; the full passage is one click
+     away and the point of this list is comparing eight of them. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rag-url {
+  font-size: 0.6875rem;
+  color: var(--faint);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.rag-url:hover {
+  color: var(--accent);
+}
+
+/*
+ * The bar above the widget.
+ *
+ * Placed over the stage rather than in the panel because it changes what the
+ * pane below it is showing — a control for the widget belongs with the widget.
+ */
+/*
+ * The knowledge base heading and its switch on one row.
+ *
+ * The switch sat in a bar over the widget before, which put the control on the
+ * wrong thing: what it turns off is this panel's index, not the chat. Next to
+ * the heading it reads as the subject's own state, and the stage goes back to
+ * being nothing but the widget.
+ */
+.rag-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.rag-head-row h1 {
+  margin: 0;
+}
+
+.rag-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--faint);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Off-screen rather than `display: none`: the input is still the control that
+   is focused, toggled and read out — only its default box is replaced. */
+.rag-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rag-switch-track {
+  position: relative;
+  width: 2rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 150ms ease;
+}
+
+.rag-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 0.1875rem;
+  left: 0.1875rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 150ms ease;
+}
+
+.rag-switch input:checked + .rag-switch-track {
+  background: var(--accent);
+}
+
+.rag-switch input:checked + .rag-switch-track::after {
+  transform: translateX(0.875rem);
+}
+
+.rag-switch input:focus-visible + .rag-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.rag-switch:has(input:checked) {
+  color: var(--text);
+}
+
+/* What retrieval is currently doing, under the panel's lede — the sentence the
+   switch's two words cannot carry on their own. */
+.rag-stage-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--accent);
+}
+
+.rag-stage-note-off {
+  color: var(--faint);
+}
+

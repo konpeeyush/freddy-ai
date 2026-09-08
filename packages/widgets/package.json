@@ -1,0 +1,33 @@
+{
+  "name": "@workspace/widgets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^4.3.0",
+    "@hugeicons/react": "^1.1.10",
+    "@workspace/ui": "workspace:*",
+    "react": "^19.2.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10",
+    "@types/react": "^19",
+    "eslint": "^10",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17",
+    "typescript": "~6",
+    "typescript-eslint": "^8"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./tree": "./src/tree.ts",
+    "./resolve": "./src/resolve.ts",
+    "./actions": "./src/actions.ts",
+    "./events": "./src/events.ts"
+  }
+}

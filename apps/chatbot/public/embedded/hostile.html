@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hostile CSS — Widget Preview</title>
+    <link rel="stylesheet" href="_page.css" />
+    <style>
+      /*
+       * Deliberately aggressive host styles, scoped to .hostile so the nav
+       * stays readable. Every rule here would wreck the widget if it rendered
+       * in the light DOM. Inside a shadow root, none of them reach it.
+       */
+      .hostile * {
+        box-sizing: content-box !important;
+        font-family: "Comic Sans MS", cursive !important;
+        letter-spacing: 2px !important;
+        line-height: 3 !important;
+      }
+      .hostile div {
+        border: 3px dashed magenta !important;
+      }
+      .hostile button {
+        background: lime !important;
+        color: red !important;
+        border-radius: 0 !important;
+        transform: rotate(-2deg) !important;
+        font-size: 20px !important;
+      }
+      .hostile p,
+      .hostile span {
+        color: hotpink !important;
+        font-size: 22px !important;
+      }
+      .hostile h1 {
+        color: cyan !important;
+        text-shadow: 3px 3px 0 magenta !important;
+      }
+      .hostile code {
+        background: yellow !important;
+        color: blue !important;
+      }
+      /* A reset that nukes inherited type, as some sites genuinely ship */
+      .hostile input,
+      .hostile textarea {
+        background: yellow !important;
+        border: 4px solid blue !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site">
+      <div class="brand"><span class="dot">◆</span> Widget Preview</div>
+      <nav>
+        <a href="index.html">Overview</a>
+        <a href="floating.html">Floating</a>
+        <a href="inline.html">Inline</a>
+        <a href="hostile.html" aria-current="page">Hostile CSS</a>
+      </nav>
+    </header>
+
+    <div class="content hostile">
+      <a class="back" href="index.html">← Overview</a>
+      <p class="eyebrow">Isolation test</p>
+      <h1>Hostile CSS</h1>
+      <p>
+        This page applies Comic Sans, magenta dashed borders, lime rotated
+        buttons, 3× line-height and hotpink text — all with
+        <code>!important</code>.
+      </p>
+      <p>
+        The page looks broken because it is. The widget should look completely
+        normal. If it does not, the Shadow DOM boundary has regressed.
+      </p>
+      <div class="actions">
+        <button class="demo" onclick="FreddyChat.open()">Open widget</button>
+      </div>
+    </div>
+
+    <script src="../widget.js"></script>
+    <freddy-chat
+      mode="floating"
+      default-open="true"
+      theme="dark"
+    ></freddy-chat>
+  </body>
+</html>

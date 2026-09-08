@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inline — Widget Preview</title>
+    <link rel="stylesheet" href="_page.css" />
+    <style>
+      /*
+       * A docked side-pane, so the page must not scroll: the body owns the
+       * viewport, the header and the layout split it, and each pane scrolls on
+       * its own — the article normally, the widget through its own scroller.
+       * Let the aside grow instead and a long transcript pushes the composer
+       * off the bottom of the screen.
+       */
+      body {
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      header.site {
+        /* Sticky is pointless once nothing scrolls behind it, and it would
+           take the header out of the flex flow it now sits in. */
+        position: static;
+        flex-shrink: 0;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 23rem;
+        /* Explicit: a grid container stretched by flex still gives its
+           implicit row `auto`, which lets the dock track its content. */
+        grid-template-rows: 1fr;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .layout > .content {
+        overflow-y: auto;
+        min-height: 0;
+      }
+      aside.dock {
+        border-inline-start: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+      aside.dock > freddy-chat {
+        flex: 1;
+        min-height: 0;
+      }
+      @media (max-width: 52rem) {
+        /* Stacked: side by side no longer fits, so the page scrolls again and
+           the dock takes a fixed slice. */
+        body {
+          height: auto;
+          display: block;
+          overflow: visible;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto auto;
+          overflow: visible;
+        }
+        .layout > .content {
+          overflow: visible;
+        }
+        aside.dock {
+          height: 32rem;
+          border-inline-start: 0;
+          border-top: 1px solid var(--border);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site">
+      <div class="brand"><span class="dot">◆</span> Widget Preview</div>
+      <nav>
+        <a href="index.html">Overview</a>
+        <a href="floating.html">Floating</a>
+        <a href="inline.html" aria-current="page">Inline</a>
+        <a href="fullscreen.html">Fullscreen</a>
+        <a href="hostile.html">Hostile CSS</a>
+      </nav>
+    </header>
+    <div class="layout">
+      <div class="content">
+        <a class="back" href="index.html">← Overview</a>
+        <p class="eyebrow">Mode</p>
+        <h1>Inline / aside</h1>
+        <p>
+          Here the widget is docked into the page layout as a sidebar. There is
+          no bubble and no close button — the page already allocated space, so
+          hiding the content behind a click would only add friction.
+        </p>
+        <p>
+          The chat UI is the exact same component floating mode renders. Only
+          the container around it differs, which is what the trigger / container
+          / content split buys.
+        </p>
+      </div>
+      <aside class="dock">
+        <freddy-chat mode="inline" theme="dark"></freddy-chat>
+      </aside>
+    </div>
+    <script src="../widget.js"></script>
+  </body>
+</html>

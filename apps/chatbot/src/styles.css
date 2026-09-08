@@ -1,0 +1,515 @@
+/*
+ * Widget stylesheet — compiled to a string and injected into the shadow root.
+ *
+ * Differs from @workspace/ui/globals.css in two ways that matter for Shadow DOM:
+ *   1. No @fontsource import. @font-face is ignored inside a shadow root, so we
+ *      use the system stack instead of Figtree.
+ *   2. Tokens are declared on :host, not :root. :root does not exist inside a
+ *      shadow tree.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+/*
+ * The dot-matrix loader's stylesheet, pulled in here rather than left to the
+ * component's own `import "...css"`.
+ *
+ * That side-effect import hands the CSS to Vite's JS graph, which emits it as
+ * a stylesheet for the host page's <head> — where a closed shadow root cannot
+ * see it, so the loader would render as an unstyled row of squares. Everything
+ * the shadow tree needs has to arrive through this file, which is compiled to
+ * a string and adopted in `mount.tsx`.
+ */
+@import "../../../packages/ui/src/components/dotmatrix-loader.css";
+
+/*
+ * Freddy's stylesheet, straight from `@claykit/react`.
+ *
+ * Imported by CSS `@import` rather than a component-level `import
+ * "@claykit/react/styles.css"` in the .tsx — that route hands the CSS to
+ * Vite's JS graph, which emits it as a stylesheet for the host page's
+ * <head>, where a closed shadow root cannot see it. A CSS-level `@import`
+ * here gets resolved and inlined into this one file instead, which is what
+ * `mount.tsx` compiles to a string and adopts into the shadow root. Without
+ * it the avatar renders as an unsized SVG that fills whatever box it is
+ * dropped into.
+ */
+@import "@claykit/react/styles.css";
+
+@source "../src/**/*.{ts,tsx}";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+/*
+ * The widget runtime, whose primitives carry classes nothing else uses — the
+ * badge and button colour tokens in particular. Without this they are absent
+ * from the compiled sheet and a `danger` badge renders as unstyled text, which
+ * looks like the widget failed rather than the stylesheet did.
+ */
+@source "../../../packages/widgets/src/**/*.{ts,tsx}";
+
+/*
+ * data-theme lives on the host element, which is outside the shadow tree —
+ * so `dark:` must reach it via :host(), not a descendant selector.
+ */
+@custom-variant dark (:host([data-theme="dark"]) &);
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+:host {
+  /*
+     * Shadow DOM blocks the host page's *selectors*, but inheritable properties
+     * (font, color, line-height, letter-spacing…) still pass through the host
+     * element into the shadow tree. `all: initial` cuts that inheritance.
+     *
+     * Must come before the token declarations below — `all` resets custom
+     * properties too, so anything declared above it would be wiped.
+     */
+  all: initial;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+:host([data-theme="dark"]) {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * Our typographic baseline. Unlayered and !important so a host page's own
+ * `* { font-family: … !important }` cannot win on inherited properties.
+ */
+:host {
+  font-family: var(--font-sans) !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  line-height: 1.5 !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-transform: none !important;
+  text-align: start !important;
+  text-indent: 0 !important;
+  white-space: normal !important;
+  color: var(--foreground) !important;
+  direction: ltr !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-size-adjust: 100% !important;
+}
+
+@layer base {
+  /*
+   * Tailwind's preflight sets these `*` defaults on the main document, which a
+   * shadow tree never inherits — so `border` computed to 0px and `shadow-*`
+   * composed to `none`. Re-declare them inside the shadow root.
+   */
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    box-sizing: border-box;
+    border: 0 solid;
+    margin: 0;
+    padding: 0;
+    --tw-border-style: solid;
+    --tw-shadow: 0 0 #0000;
+    --tw-inset-shadow: 0 0 #0000;
+    --tw-ring-shadow: 0 0 #0000;
+    --tw-inset-ring-shadow: 0 0 #0000;
+    --tw-ring-offset-shadow: 0 0 #0000;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  button {
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  input {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+/*
+ * Composer animations. Namespaced because these land in the shadow root
+ * alongside Tailwind's own keyframes.
+ */
+@keyframes widget-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes widget-eq {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/*
+ * iMessage-style bubbles. Imported here rather than from the component:
+ * a `import "./x.css"` in a .tsx emits a separate stylesheet that Vite injects
+ * into <head>, which a shadow root cannot see.
+ */
+.imessage-bubble {
+  word-wrap: break-word;
+  line-height: 24px;
+  position: relative;
+  padding: 8px 20px;
+  max-width: 85%;
+  border-radius: 20px;
+}
+
+.imessage-bubble::before,
+.imessage-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 18px;
+}
+
+/* Grouped messages have tighter corner radii on the stacking side */
+/* Received messages (left side) - tight corners on left side */
+.imessage-grouped-first.imessage-from-them {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 20px 20px 20px 5px !important;
+}
+
+.imessage-grouped-middle.imessage-from-them {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 5px 20px 20px 5px !important;
+}
+
+.imessage-grouped-last.imessage-from-them {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 5px 20px 20px 20px !important;
+}
+
+.imessage-grouped-last.imessage-from-them {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 5px 20px 20px 20px !important;
+}
+
+/* Sent messages (right side) - tight corners on right side */
+.imessage-grouped-first.imessage-from-me {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 20px 20px 5px 20px !important;
+}
+
+.imessage-grouped-middle.imessage-from-me {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 20px 5px 5px 20px !important;
+}
+
+.imessage-grouped-last.imessage-from-me {
+  /* biome-ignore lint/complexity/noImportantStyles: need to override radius */
+  border-radius: 20px 5px 20px 20px !important;
+}
+
+/* Bot messages (from-them style) */
+.imessage-from-them {
+  background-color: var(--muted);
+  color: var(--foreground);
+  align-self: flex-start;
+}
+
+.imessage-from-them::before {
+  left: -7px;
+  width: 20px;
+  background-color: var(--muted);
+  border-bottom-right-radius: 16px;
+}
+
+.imessage-from-them::after {
+  left: -26px;
+  width: 26px;
+  background-color: var(--background);
+  border-bottom-right-radius: 10px;
+}
+
+/* User messages (from-me style) */
+.imessage-from-me {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  align-self: flex-end;
+}
+
+.imessage-from-me::before {
+  right: -7px;
+  width: 20px;
+  background-color: var(--primary);
+  border-bottom-left-radius: 16px 14px;
+}
+
+.imessage-from-me::after {
+  right: -26px;
+  width: 26px;
+  background-color: var(--background);
+  border-bottom-left-radius: 10px;
+}
+
+/* Grouped iMessage bubbles for NEW_MESSAGE_BREAK */
+/* Hide tails for grouped messages except the last one */
+.imessage-grouped-first::before,
+.imessage-grouped-first::after,
+.imessage-grouped-middle::before,
+.imessage-grouped-middle::after {
+  display: none;
+}
+
+/*
+ * Message entry. Rises from below with a slight scale — the direction implies
+ * the message came from the composer, which sits underneath.
+ */
+@keyframes widget-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Respect a reduced-motion preference: keep the fade, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes widget-message-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* Send button acknowledgement — a quick squash-and-settle. */
+@keyframes widget-send-pulse {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(0.86);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/*
+ * Waiting indicator. The pixel grid's wavefront and the label shimmer, both
+ * looping — see chat/thinking.tsx for how the delays form a chevron.
+ */
+@keyframes widget-pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-shimmer-text {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/*
+ * Reduced motion: freeze the grid at its dim state and stop the shimmer. The
+ * elapsed timer keeps ticking — that is information, not decoration.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes widget-pixel-on {
+    0%,
+    100% {
+      opacity: 0.15;
+    }
+  }
+  @keyframes widget-shimmer-text {
+    from,
+    to {
+      background-position: 0 0;
+    }
+  }
+}
+
+/*
+ * Streaming text: each new word resolves out of blur. `filter` and `opacity`
+ * only — no layout properties, so a long reply does not thrash the scroller.
+ */
+@keyframes widget-word-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+/*
+ * A whole reply's worth of words each blurring and lifting is a great deal of
+ * motion — more than the message-level animations, since it repeats per word
+ * for the length of the answer. Reduced-motion keeps the reveal, which is what
+ * carries the sense of streaming, and drops the blur and the movement.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes widget-word-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/*
+ * A soft pulse rather than a hard terminal blink.
+ *
+ * `steps(1)` snapped between fully on and fully off, which next to text that
+ * is itself easing into place read as a separate, jumpier element. Easing
+ * between opacities keeps it part of the same motion, and never fully
+ * disappears so the eye keeps its place at the end of the line.
+ */
+@keyframes widget-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes widget-word-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

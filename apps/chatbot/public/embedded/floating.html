@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Floating — Widget Preview</title>
+    <link rel="stylesheet" href="_page.css" />
+  </head>
+  <body>
+    <header class="site">
+      <div class="brand"><span class="dot">◆</span> Widget Preview</div>
+      <nav>
+        <a href="index.html">Overview</a>
+        <a href="floating.html" aria-current="page">Floating</a>
+        <a href="inline.html">Inline</a>
+        <a href="fullscreen.html">Fullscreen</a>
+        <a href="hostile.html">Hostile CSS</a>
+      </nav>
+    </header>
+    <div class="content">
+      <a class="back" href="index.html">← Overview</a>
+      <p class="eyebrow">Mode</p>
+      <h1>Floating</h1>
+      <p>
+        The widget pins itself to the bottom-right corner and stays out of the
+        page's layout entirely. Click the bubble to open the frame.
+      </p>
+      <div class="note">
+        The buttons below drive the widget through
+        <code>window.FreddyChat</code> — the same API a customer would call
+        from their own nav link.
+      </div>
+      <div class="actions">
+        <button class="demo" onclick="FreddyChat.open()">Open</button>
+        <button class="demo" onclick="FreddyChat.close()">Close</button>
+        <button class="demo" onclick="FreddyChat.toggle()">Toggle</button>
+      </div>
+      <p>
+        Try sending a message, and use the sun/moon button in the widget header
+        to switch its theme independently of this page.
+      </p>
+    </div>
+
+    <script src="../widget.js"></script>
+    <freddy-chat
+      mode="floating"
+      position="bottom-right"
+      theme="dark"
+    ></freddy-chat>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "@workspace/rag",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^4.0.58",
+    "@ai-sdk/openai-compatible": "^3.0.43",
+    "@mozilla/readability": "^0.6.0",
+    "ai": "^7.0.85",
+    "better-sqlite3": "^12.4.1",
+    "fast-xml-parser": "^5.2.5",
+    "linkedom": "^0.18.9",
+    "turndown": "^7.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22",
+    "@types/turndown": "^5.0.5",
+    "eslint": "^10",
+    "typescript": "~6",
+    "typescript-eslint": "^8",
+    "vitest": "^3.2.4"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  }
+}

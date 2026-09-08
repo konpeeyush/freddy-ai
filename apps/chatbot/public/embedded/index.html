@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Widget Preview</title>
+    <link rel="stylesheet" href="_page.css" />
+  </head>
+  <body>
+    <header class="site">
+      <div class="brand"><span class="dot">◆</span> Widget Preview</div>
+      <nav>
+        <a href="index.html">Overview</a>
+        <a href="floating.html">Floating</a>
+        <a href="inline.html">Inline</a>
+        <a href="fullscreen.html">Fullscreen</a>
+        <a href="hostile.html">Hostile CSS</a>
+      </nav>
+    </header>
+    <div class="content">
+      <p class="eyebrow">Test cases</p>
+      <h1>Embeddable chat widget</h1>
+      <p>
+        Each page below loads the real built <code>widget.js</code> through a
+        script tag — the same way a customer would embed it. No source imports,
+        no dev shortcuts.
+      </p>
+      <div class="grid">
+        <a class="card" href="floating.html">
+          <h2>Floating</h2>
+          <p>
+            Bubble trigger with a fixed frame pinned to a corner. The default
+            embed, and the one most sites use.
+          </p>
+        </a>
+        <a class="card" href="inline.html">
+          <h2>Inline / aside</h2>
+          <p>
+            Docked into the page layout as a sidebar. No trigger — it is always
+            open because the page gave it space.
+          </p>
+        </a>
+        <a class="card" href="fullscreen.html">
+          <h2>Fullscreen</h2>
+          <p>
+            Covers the viewport. Suited to mobile, or a dedicated support route.
+          </p>
+        </a>
+        <a class="card" href="hostile.html">
+          <h2>Hostile CSS</h2>
+          <p>
+            Host page actively tries to break the widget with
+            <code>!important</code> everywhere. Proves the Shadow DOM boundary
+            holds.
+          </p>
+        </a>
+      </div>
+    </div>
+  </body>
+</html>
