@@ -10,6 +10,7 @@ import { Toaster } from "sonner"
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
 
 import { App } from "./App"
+import { DashboardAuthGate } from "./components/dashboard-auth-gate"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,10 +27,12 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <BrowserRouter>
-          <App />
-          <Toaster position="top-right" richColors theme="dark" />
-        </BrowserRouter>
+        <DashboardAuthGate>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </DashboardAuthGate>
+        <Toaster position="top-right" richColors theme="dark" />
       </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>

@@ -39,6 +39,7 @@ import { db } from "./db"
 import * as Conversations from "./conversations"
 import * as Documents from "./documents"
 import { getSettings, upsertSettings } from "./settings"
+import { requireDashboardAuth } from "./auth"
 
 import {
   cancelIngest,
@@ -312,7 +313,7 @@ app.post("/compile-sequence", async (c) => {
  * useful part is watching *which* pages were skipped and why. A response that
  * only arrives at the end cannot tell you your docs are client-rendered.
  */
-app.post("/rag/ingest", async (c) => {
+app.post("/rag/ingest", requireDashboardAuth, async (c) => {
   const parsed = RagIngestRequestSchema.safeParse(
     await c.req.json().catch(() => null)
   )
@@ -337,7 +338,7 @@ app.post("/rag/ingest", async (c) => {
 })
 
 /** Stops an ingest mid-crawl. Idempotent — cancelling nothing is not an error. */
-app.post("/rag/cancel", async (c) => {
+app.post("/rag/cancel", requireDashboardAuth, async (c) => {
   const parsed = TenantIdSchema.safeParse(
     (await c.req.json().catch(() => null))?.tenantId ?? DEFAULT_TENANT
   )
@@ -354,7 +355,7 @@ app.post("/rag/cancel", async (c) => {
  * answers badly, this says whether retrieval found the right passage and the
  * model ignored it, or never found it at all. Those have opposite fixes.
  */
-app.post("/rag/search", async (c) => {
+app.post("/rag/search", requireDashboardAuth, async (c) => {
   const parsed = RagSearchRequestSchema.safeParse(
     await c.req.json().catch(() => null)
   )
@@ -393,7 +394,7 @@ app.post("/rag/search", async (c) => {
  * aggregates across all of them, and `ingesting` reports whether any tenant
  * has a crawl running rather than defaulting to just one.
  */
-app.get("/rag/sources", async (c) => {
+app.get("/rag/sources", requireDashboardAuth, async (c) => {
   const tenantId = c.req.query("tenantId") ?? undefined
   return c.json({
     sources: await ragSources(tenantId),
@@ -402,7 +403,7 @@ app.get("/rag/sources", async (c) => {
 })
 
 /** Empties one knowledge base. Scoped by tenant — there is no "clear all". */
-app.post("/rag/clear", async (c) => {
+app.post("/rag/clear", requireDashboardAuth, async (c) => {
   const parsed = TenantIdSchema.safeParse(
     (await c.req.json().catch(() => null))?.tenantId ?? DEFAULT_TENANT
   )
@@ -417,7 +418,7 @@ app.post("/rag/clear", async (c) => {
 /** Removes one crawled site — the Links tab's per-row delete. Leaves the
  *  rest of the tenant's knowledge base (other sites, uploaded documents)
  *  alone, unlike `/rag/clear` above. */
-app.post("/rag/sources/delete", async (c) => {
+app.post("/rag/sources/delete", requireDashboardAuth, async (c) => {
   const parsed = DeleteSourceRequestSchema.safeParse(
     await c.req.json().catch(() => null)
   )
@@ -636,7 +637,7 @@ app.get("/conversations/:conversationId/messages", async (c) => {
   })
 })
 
-app.get("/conversations", async (c) => {
+app.get("/conversations", requireDashboardAuth, async (c) => {
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const status = (c.req.query("status") as ConversationStatus | undefined) ?? undefined
   const cursor = c.req.query("cursor") ?? undefined
@@ -650,7 +651,7 @@ app.get("/conversations", async (c) => {
   return c.json({ items: items.map(toConversation), nextCursor })
 })
 
-app.get("/conversations/:conversationId", async (c) => {
+app.get("/conversations/:conversationId", requireDashboardAuth, async (c) => {
   const conversationId = c.req.param("conversationId")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
 
@@ -661,7 +662,7 @@ app.get("/conversations/:conversationId", async (c) => {
   return c.json({ conversation: toConversation(row) })
 })
 
-app.patch("/conversations/:conversationId/status", async (c) => {
+app.patch("/conversations/:conversationId/status", requireDashboardAuth, async (c) => {
   const parsed = UpdateConversationStatusRequestSchema.safeParse(
     await c.req.json().catch(() => null)
   )
@@ -688,7 +689,7 @@ app.patch("/conversations/:conversationId/status", async (c) => {
  * the existing /rag/ingest crawl path. See documents.ts.
  * ========================================================================= */
 
-app.post("/documents", async (c) => {
+app.post("/documents", requireDashboardAuth, async (c) => {
   const body = await c.req.parseBody().catch(() => null)
   const file = body?.file
   if (!(file instanceof File)) {
@@ -711,7 +712,7 @@ app.post("/documents", async (c) => {
   return c.json({ document: toDocument(document) })
 })
 
-app.get("/documents", async (c) => {
+app.get("/documents", requireDashboardAuth, async (c) => {
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const cursor = c.req.query("cursor") ?? undefined
   const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_SIZE)
@@ -723,7 +724,7 @@ app.get("/documents", async (c) => {
   return c.json({ items: items.map(toDocument), nextCursor })
 })
 
-app.delete("/documents/:id", async (c) => {
+app.delete("/documents/:id", requireDashboardAuth, async (c) => {
   const id = c.req.param("id")
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   const ok = await Documents.deleteDocument(db, tenantId, id)
@@ -738,12 +739,12 @@ app.delete("/documents/:id", async (c) => {
  * above on every turn; see `./settings.ts`.
  * ========================================================================= */
 
-app.get("/settings", async (c) => {
+app.get("/settings", requireDashboardAuth, async (c) => {
   const tenantId = c.req.query("tenantId") ?? DEFAULT_TENANT
   return c.json(await getSettings(db, tenantId))
 })
 
-app.post("/settings", async (c) => {
+app.post("/settings", requireDashboardAuth, async (c) => {
   const parsed = UpdateSettingsRequestSchema.safeParse(
     await c.req.json().catch(() => null)
   )

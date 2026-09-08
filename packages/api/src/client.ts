@@ -297,6 +297,24 @@ export async function* streamChat({
  * (status + retryable) is generic HTTP, not chat-specific.
  * ========================================================================= */
 
+/**
+ * The dashboard's shared password (see `packages/backend/src/auth.ts`),
+ * attached to every request once set. Not something the widget ever calls —
+ * `/chat` and the widget's own message endpoints aren't gated by it, so a
+ * widget page simply never calls `setDashboardAuthKey` and this stays
+ * `null` for it, same as before this existed.
+ */
+let dashboardAuthKey: string | null = null
+
+export function setDashboardAuthKey(key: string | null): void {
+  dashboardAuthKey = key
+}
+
+function withAuthHeader(headers?: HeadersInit): HeadersInit | undefined {
+  if (!dashboardAuthKey) return headers
+  return { ...(headers as Record<string, string> | undefined), "x-dashboard-key": dashboardAuthKey }
+}
+
 async function request<T>(
   url: string,
   init: RequestInit,
@@ -305,7 +323,11 @@ async function request<T>(
 ): Promise<T> {
   let response: Response
   try {
-    response = await fetch(url, { ...init, signal })
+    response = await fetch(url, {
+      ...init,
+      headers: withAuthHeader(init.headers),
+      signal,
+    })
   } catch (cause) {
     if (signal?.aborted) throw new ChatAbortError()
     throw new ChatRequestError(
@@ -571,13 +593,15 @@ export async function* ingestUrl(
 ): AsyncGenerator<IngestEvent> {
   let response: Response
   try {
+    const init = jsonInit("POST", {
+      url: options.url,
+      tenantId: options.tenantId ?? DEFAULT_TENANT,
+      maxPages: options.maxPages,
+      prune: options.prune,
+    })
     response = await fetch(`${options.baseUrl}/rag/ingest`, {
-      ...jsonInit("POST", {
-        url: options.url,
-        tenantId: options.tenantId ?? DEFAULT_TENANT,
-        maxPages: options.maxPages,
-        prune: options.prune,
-      }),
+      ...init,
+      headers: withAuthHeader(init.headers),
       signal,
     })
   } catch (cause) {
