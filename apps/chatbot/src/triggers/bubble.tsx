@@ -34,7 +34,7 @@ export function Bubble({
       {open ? (
         <HugeiconsIcon icon={Cancel01Icon} className="size-6" />
       ) : (
-        <Freddy size={40} ariaLabel="Freddy" />
+        <Freddy size={64} ariaLabel="Freddy" />
       )}
     </button>
   )

@@ -189,7 +189,7 @@ function MessageList({
         >
           {messages.length === 0 && !pending && !error ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
-              <Freddy state={freddy} size={96} ariaLabel="Freddy" />
+              <Freddy state={freddy} size={128} ariaLabel="Freddy" />
               <div>
                 {/* First person, and a name: the face above it is Freddy's,
                     and "we" reads as a company where the panel is one
@@ -521,16 +521,16 @@ export function ChatPanel({
         />
         <div
           className={cn(
-            "pointer-events-auto relative flex items-center gap-3 px-4",
+            "pointer-events-auto relative flex items-center gap-2 px-4",
             centered ? "py-4" : "py-3",
             column
           )}
         >
-          <div className="flex size-9 shrink-0 items-center justify-center">
+          <div className="flex size-14 shrink-0 items-center justify-center">
             <Freddy state={freddyState} size="100%" ariaLabel={title} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{title}</p>
+            <p className="truncate text-lg font-semibold">{title}</p>
             {subtitle ? (
               <p className="truncate text-xs text-muted-foreground">
                 {subtitle}
