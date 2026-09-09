@@ -1,13 +1,13 @@
-# RAG Hybrid Search — Vector + Keyword search, mixed together
-_Do dost jo alag alag tareeke se sochte hain, milke ek behtar jawab dete hain — vector aur keyword search, dono._
+# RAG Hybrid Search — vector + keyword search, mixed together
+_Two friends who think in completely different ways give a better answer together — vector and keyword search, both._
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-Jab bhi widget se koi user kuch poochta hai, backend ko pehle relevant docs chunks dhoondhne padte hain jo answer banane mein kaam aayenge — isko "retrieval" kehte hain (RAG ka "R"). `packages/rag/src/search.ts` ka `search()` function yeh kaam karta hai, but ek hi tareeke se nahi — do alag retrieval methods (vector similarity aur keyword/BM25) chalata hai, aur unke results ko ek smart algorithm (Reciprocal Rank Fusion) se mix karke top 5 chunks deta hai. Isko "hybrid search" bolte hain kyunki dono approaches ke strengths combine ho jaate hain.
+Whenever a user asks something through the widget, the backend first has to find the relevant doc chunks that will help build the answer — this is called "retrieval" (the "R" in RAG). The `search()` function in `packages/rag/src/search.ts` does that job, but not in one way — it runs two different retrieval methods (vector similarity and keyword/BM25) and mixes their results with a smart algorithm (Reciprocal Rank Fusion) to produce the top 5 chunks. It's called "hybrid search" because the strengths of both approaches get combined.
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Sirf vector search (meaning-based) use karne mein ek badi weakness hai — exact strings pe fail karta hai. File ke top comment mein hi likha hai:
+Using vector search (meaning-based) alone has one big weakness — it fails on exact strings. The comment at the top of the file spells it out:
 
 ```ts
 // packages/rag/src/search.ts:4-8
@@ -18,21 +18,21 @@ Sirf vector search (meaning-based) use karne mein ek badi weakness hai — exact
  * "can I get my money back" shares no words with a page titled "Refunds".
 ```
 
-Matlab dono tareeke apni-apni jagah fail karte hain: sirf vector search se, error code jaisa random-ish token baaki sab error strings ke "numerically close" lagta hai — meaning-wise koi khaas signal nahi deta. Sirf keyword search se, "can I get my money back" jaisa natural sawaal "Refunds" page se literally zero words match karega. Isliye dono chalao, aur jo bhi mile use combine karo.
+So each approach fails in its own way: with vector search alone, a random-ish token like an error code looks "numerically close" to every other error string — meaning-wise it carries no real signal. With keyword search alone, a natural question like "can I get my money back" matches literally zero words on the "Refunds" page. So run both and combine whatever each finds.
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **Embedding model mismatch check pehle** — query embed karne se pehle hi check hota hai ki index jis model se bana tha, wahi model abhi configured hai (`search.ts:95-99`). Mismatch pe turant `EmbeddingModelMismatch` throw ho jaata hai — embed karne ka network call bhi waste nahi hota.
-2. **Query embed hota hai** — `embedQuery(query)` query ko 768-number ka vector bana deta hai (`embed.ts`, next section mein detail).
-3. **Vector search chalta hai** — `store.searchVector(tenantId, embedding, candidates)` cosine similarity se top 20 candidates dhoondta hai (`candidates: 20` default).
-4. **Similarity floor apply hota hai** — `minSimilarity` (0.35) se kam score wala result discard ho jaata hai (`search.ts:108-110`) — reason agla section mein.
-5. **Keyword search parallel mein chalta hai** — `store.searchKeyword` SQLite FTS5 (full-text search extension) se BM25 algorithm ke top 20 matches nikaalta hai.
-6. **Dono lists RRF se fuse hoti hain** — `fuse(vector, keyword, limit)` har list ke har result ki sirf RANK POSITION dekhta hai, formula `1 / (60 + rank)` se score deta hai. Chunk dono lists mein aaya toh dono contributions add ho jaate hain.
-7. **Top 5 return hote hain**, sorted by fused score, har ek pe `via: ["vector"]` / `["keyword"]` / `["vector","keyword"]` tag laga hota hai — batata hai result kis retriever se mila.
+1. **The embedding-model mismatch check comes first** — before the query is even embedded, it checks that the model the index was built with is still the configured one (`search.ts:95-99`). On a mismatch it throws `EmbeddingModelMismatch` immediately — not even the embedding network call is wasted.
+2. **The query is embedded** — `embedQuery(query)` turns it into a 768-number vector (`embed.ts`, detailed in the next section).
+3. **Vector search runs** — `store.searchVector(tenantId, embedding, candidates)` finds the top 20 candidates by cosine similarity (`candidates: 20` by default).
+4. **The similarity floor is applied** — any result scoring below `minSimilarity` (0.35) is discarded (`search.ts:108-110`) — the reason is in the next section.
+5. **Keyword search runs in parallel** — `store.searchKeyword` pulls the BM25 algorithm's top 20 matches through SQLite FTS5 (the full-text search extension).
+6. **The two lists are fused with RRF** — `fuse(vector, keyword, limit)` looks only at each result's RANK POSITION in each list and scores it with the formula `1 / (60 + rank)`. If a chunk appears in both lists, both contributions add up.
+7. **The top 5 are returned**, sorted by fused score, each tagged with `via: ["vector"]` / `["keyword"]` / `["vector","keyword"]` — telling you which retriever found it.
 
 ## Code walkthrough
 
-- **`packages/rag/src/search.ts:37-41`** — defaults: `candidates: 20` (har retriever se kitne pull karte hain fusion se pehle), `limit: 5` (final results), `minSimilarity: 0.35` (vector floor).
+- **`packages/rag/src/search.ts:37-41`** — the defaults: `candidates: 20` (how many to pull from each retriever before fusion), `limit: 5` (final results), `minSimilarity: 0.35` (the vector floor).
 ```ts
 export const DEFAULT_SEARCH: SearchOptions = {
   candidates: 20,
@@ -41,7 +41,7 @@ export const DEFAULT_SEARCH: SearchOptions = {
 }
 ```
 
-- **`packages/rag/src/search.ts:47-77`** — `fuse()` function, RRF ka actual implementation. Har list ko iterate karke `contribution = 1 / (RRF_K + rank + 1)` add karta hai; agar chunk pehle se map mein hai toh `via` array mein doosra retriever bhi push ho jaata hai:
+- **`packages/rag/src/search.ts:47-77`** — the `fuse()` function, the actual RRF implementation. It iterates each list adding `contribution = 1 / (RRF_K + rank + 1)`; if the chunk is already in the map, the second retriever is pushed into its `via` array:
 ```ts
 const contribution = 1 / (RRF_K + rank + 1)
 if (existing) {
@@ -52,9 +52,9 @@ if (existing) {
 }
 ```
 
-- **`packages/rag/src/search.ts:95-99`** — model mismatch check embedding se pehle. Comment khud reasoning deta hai: dono backends 768-float vectors hi output karte hain, toh mismatch crash nahi karega, balki "confidently ranked list of unrelated passages" dega — sabse kharab failure mode, kyunki koi error nahi dikhega.
+- **`packages/rag/src/search.ts:95-99`** — the model mismatch check, before embedding. The comment gives the reasoning itself: both backends output 768-float vectors, so a mismatch wouldn't crash — it would produce a "confidently ranked list of unrelated passages", the worst failure mode, because no error ever surfaces.
 
-- **`packages/rag/src/store/sqlite.ts:389-398`** — keyword search FTS5 ki apni query syntax se bachne ke liye raw query ko terms mein todta hai, quote karta hai, OR se jodta hai (apostrophe ya `*` FTS5 mein operator hai, syntax error de sakta hai):
+- **`packages/rag/src/store/sqlite.ts:389-398`** — keyword search splits the raw query into terms, quotes them, and joins with OR to avoid FTS5's own query syntax (an apostrophe or `*` is an operator in FTS5 and can cause a syntax error):
 ```ts
 const terms = query
   .toLowerCase()
@@ -64,38 +64,38 @@ const terms = query
   .map((t) => `"${t}"`)
 ```
 
-- **`packages/rag/src/embed.ts:47-79`** — `backend()` function decide karta hai Google ya Ollama use karna hai (`resolveProvider()` se, jo chat model bhi use karta hai), aur `target` ("document" ya "query") ke hisaab se alag `taskType`/prefix deta hai — is wajah se document aur query embeddings symmetric nahi hote, jaan-boojh kar.
+- **`packages/rag/src/embed.ts:47-79`** — the `backend()` function decides whether to use Google or Ollama (via `resolveProvider()`, which the chat model also uses), and gives a different `taskType`/prefix depending on the `target` ("document" or "query") — which is exactly why document and query embeddings aren't symmetric, on purpose.
 
 ## Diagram
 
-Neel diagram (`08-rag-hybrid-search.excalidraw`) mein dikhaya gaya hai ki ek "User query" do parallel paths mein split hota hai: ek taraf "Embed query" → "Vector search (cosine, floor 0.35)", doosri taraf directly "FTS5 keyword search (BM25)" — dono ek hi candidate pool pe kaam karte hain. Dono apni-apni "Ranked list" produce karte hain, jo ek "RRF Fuse (rank-based, k=60)" box mein milte hain, jahan se final "Top 5 results" box nikalta hai, neeche caption ke saath — "har result tagged: via vector / keyword / both". Excalidraw.com pe File → Open se kholo, ya file canvas pe drag-drop karo.
+The diagram (`08-rag-hybrid-search.excalidraw`) shows a "User query" splitting into two parallel paths: on one side "Embed query" → "Vector search (cosine, floor 0.35)", on the other side directly "FTS5 keyword search (BM25)" — both working over the same candidate pool. Each produces its own "Ranked list", and the two meet in an "RRF Fuse (rank-based, k=60)" box, out of which comes the final "Top 5 results" box, with a caption underneath — "each result tagged: via vector / keyword / both". Open it on excalidraw.com via File → Open, or drag the file onto the canvas.
 
 ## Interview questions
 
-**Q: Vector search akela use kyun nahi kar sakte?**
-A: Exact strings pe weak hai — error codes/product names jaise tokens ka embedding meaningfully differentiate nahi hota, ek error code baaki sab error strings ke numerically close pad jaata hai. `search.ts` ke top comment mein `SSO_REDIRECT_MISMATCH` ka exactly yehi example hai — BM25 exact match se turant dhoondh leta hai jabki vector search confuse ho jaata hai.
+**Q: Why can't you use vector search alone?**
+A: It's weak on exact strings — the embedding of a token like an error code or product name doesn't differentiate meaningfully, and one error code lands numerically close to every other error string. The comment at the top of `search.ts` uses exactly this example with `SSO_REDIRECT_MISMATCH` — BM25 finds it instantly by exact match while vector search gets confused.
 
-**Q: Keyword search akela use kyun nahi kar sakte?**
-A: Users apne words mein poochte hain, docs ke exact words mein nahi — "can I get my money back" ka koi word "Refunds" page se match nahi karega, so keyword-only zero results dega. Vector search meaning capture karta hai isliye yeh case handle kar leta hai.
+**Q: Why can't you use keyword search alone?**
+A: Users ask in their own words, not the docs' exact words — no word in "can I get my money back" matches the "Refunds" page, so keyword-only returns zero results. Vector search captures meaning and handles that case.
 
-**Q: RRF (Reciprocal Rank Fusion) kya hai aur weighted average kyun nahi use kiya?**
-A: RRF sirf har result ki rank position dekhta hai, actual score nahi — formula `1 / (60 + rank)`. Weighted average nahi use kar sakte kyunki cosine similarity [-1, 1] range mein hai jabki BM25 unbounded aur corpus-dependent hai — numbers directly comparable nahi. Ek site pe jo weighting achhi kaam kare, doosri pe wrong ho sakti hai; rank position hi ek aisi property hai jo har corpus mein consistent transfer karti hai (`search.ts:10-14`). RRF_K=60 khud original paper ka value hai, bina per-corpus tuning ke achha kaam karta hai (`search.ts:43-45`).
+**Q: What is RRF (Reciprocal Rank Fusion), and why not a weighted average?**
+A: RRF looks only at each result's rank position, not its actual score — the formula is `1 / (60 + rank)`. A weighted average isn't usable because cosine similarity is in the [-1, 1] range while BM25 is unbounded and corpus-dependent — the numbers aren't directly comparable. A weighting that works well for one site can be wrong for another; rank position is the one property that transfers consistently across corpora (`search.ts:10-14`). RRF_K=60 is the value from the original paper and works well without per-corpus tuning (`search.ts:43-45`).
 
-**Q: `minSimilarity: 0.35` floor kyun rakha gaya hai — iska purpose ranking improve karna hai?**
-A: Nahi, purpose ranking nahi, "I don't know" bolna possible banana hai. Vector search mein hamesha ek "closest" chunk milta hai chahe docs mein topic cover ho ya na ho — bina floor ke model ko kuch na kuch handed ho jaata hai aur woh confidently us se answer bana deta hai, jo hallucination ka sabse common mechanism hai (`search.ts:26-31`). Floor ensure karta hai ki 0.35 se kam similar chunk discard ho, taaki "no good match" genuinely reachable outcome bane.
+**Q: Why is the `minSimilarity: 0.35` floor there — is its purpose to improve ranking?**
+A: No, its purpose isn't ranking, it's making "I don't know" possible. Vector search always finds some "closest" chunk whether or not the docs cover the topic — without a floor, the model is handed something and confidently builds an answer out of it, which is the most common mechanism behind hallucination (`search.ts:26-31`). The floor discards anything less than 0.35 similar so that "no good match" becomes a genuinely reachable outcome.
 
-**Q: Embedding-model mismatch check query embed hone SE PEHLE kyun hota hai?**
-A: Do reasons — fail-fast (mismatch pata hai toh embed karne ka network round-trip hi waste hai), aur safety: dono backends 768-dimension vectors output karte hain, so check na ho toh mismatch silently ek "confidently ranked list of unrelated passages" dega — na crash, na empty result, bas galat answer jo model fact ki tarah cite karega (`search.ts:87-99`, `embed.ts:82-90`).
+**Q: Why does the embedding-model mismatch check happen BEFORE embedding the query?**
+A: Two reasons — fail fast (if we know there's a mismatch, the embedding round-trip is wasted), and safety: both backends output 768-dimension vectors, so without the check a mismatch silently produces a "confidently ranked list of unrelated passages" — no crash, no empty result, just a wrong answer the model cites as fact (`search.ts:87-99`, `embed.ts:82-90`).
 
-**Q: Agar `candidates: 20` ko `candidates: 5` kar do, kya problem aa sakta hai?**
-A: Fusion ka pool chhota ho jaayega — koi chunk vector search mein rank 8 pe (top-5 se bahar) lekin keyword search mein rank 2 pe ho, toh candidates=5 se woh vector list mein include hi nahi hoga, sirf keyword se contribute karega. Dono retrievers se "second opinion" milne ka chance kam ho jaata hai, especially borderline-relevant chunks ke liye.
+**Q: What could go wrong if you changed `candidates: 20` to `candidates: 5`?**
+A: The fusion pool gets smaller — a chunk that ranks 8th in vector search (outside the top 5) but 2nd in keyword search would never be in the vector list at all with candidates=5, and could only contribute from keyword. The chance of getting a "second opinion" from both retrievers drops, especially for borderline-relevant chunks.
 
-**Q: `via` field (vector/keyword/both tag) practically kis kaam aata hai?**
-A: Debugging mein — result sirf `via: ["keyword"]` hai matlab embedding model query ko theek se samajh nahi paya, jabki `via: ["vector"]` batata hai wording unusual thi but keyword match nahi mila. `types.ts` ka comment hi kehta hai: "fastest way to tell 'the embedding is wrong' from 'the wording is unusual'" — yeh diagnostic signal hai, sirf metadata nahi.
+**Q: What is the `via` field (the vector/keyword/both tag) practically good for?**
+A: Debugging — a result that's only `via: ["keyword"]` means the embedding model didn't really understand the query, while `via: ["vector"]` tells you the wording was unusual but no keyword matched. The comment in `types.ts` says it: "fastest way to tell 'the embedding is wrong' from 'the wording is unusual'" — it's a diagnostic signal, not just metadata.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- minSimilarity floor "better results" ke liye hai yeh sochna galat hai — purpose "no results" ko ek valid, reachable outcome banana hai.
-- RRF scores ko cosine similarity ya BM25 score se directly compare kar sakte hain yeh sochna galat — fused score sirf apne result-set ke andar comparable hai (`Hit.score` comment, `types.ts`).
-- Document aur query embeddings symmetric hote hain, yeh assume karna common mistake hai — jaan-boojh kar alag taskType/prefix use hote hain (`embed.ts:23-24, 57-65`), galti se same treat karo toh koi error nahi aayega, bas silently recall kharab ho jaayega.
-- FTS5 ko "simple string match" samajhna galat hai — apni query syntax hai jisme apostrophe/`*`/`(` operators hain, isliye raw query direct nahi bhej sakte, terms split-quote-OR karne padte hain (`sqlite.ts:389-398`).
+- Thinking the minSimilarity floor is there for "better results" is wrong — its purpose is to make "no results" a valid, reachable outcome.
+- Thinking RRF scores can be compared directly against cosine similarity or BM25 scores is wrong — a fused score is only comparable within its own result set (see the `Hit.score` comment in `types.ts`).
+- Assuming document and query embeddings are symmetric is a common mistake — different taskTypes/prefixes are used deliberately (`embed.ts:23-24, 57-65`); treat them as the same by accident and you get no error, just silently worse recall.
+- Treating FTS5 as "simple string matching" is wrong — it has its own query syntax where apostrophes/`*`/`(` are operators, so the raw query can't be sent through directly; the terms have to be split, quoted, and OR'd (`sqlite.ts:389-398`).

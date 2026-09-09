@@ -1,20 +1,20 @@
 # Monorepo & Tooling
-_pnpm + Turborepo se poora freddy-ai ek hi repo mein kaise fit hota hai_
+_How pnpm + Turborepo fit all of freddy-ai into a single repo_
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-freddy-ai ek "monorepo" hai — matlab do apps (`apps/chatbot`, `apps/dashboard`) aur unke saare shared
-packages (`packages/api`, `packages/backend`, `packages/rag`, `packages/ui`, `packages/widgets`) sab ek hi git
-repo mein rehte hain, ek hi `pnpm install` se. **pnpm workspaces** in sabko ek dusre se link karta hai (bina
-npm registry pe publish kiye), aur **Turborepo** in sab packages ke build/dev/lint/typecheck commands ko sahi
-order mein aur sirf-jo-changed-hua-wahi chalata hai, taaki har baar sab kuch rebuild na ho.
+freddy-ai is a "monorepo" — meaning both apps (`apps/chatbot`, `apps/dashboard`) and all their shared
+packages (`packages/api`, `packages/backend`, `packages/rag`, `packages/ui`, `packages/widgets`) live in one git
+repo, installed with a single `pnpm install`. **pnpm workspaces** links them all to each other (without
+publishing anything to the npm registry), and **Turborepo** runs each package's build/dev/lint/typecheck
+commands in the right order and only for what actually changed, so nothing gets rebuilt needlessly.
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Widget aur dashboard dono ek hi backend se baat karte hain — agar yeh alag repos hote, to `ChatMessage` jaisa
-type dono jagah copy-paste karna padta, aur backend badalne par ek app mein silently break ho jaata (runtime
-mein pata chalta, compile time pe nahi). `packages/api/src/schema.ts` ke top pe comment isko seedha explain
-karta hai:
+The widget and the dashboard both talk to the same backend — if they lived in separate repos, a type like
+`ChatMessage` would have to be copy-pasted into both, and a backend change would silently break one of the apps
+(discovered at runtime, not at compile time). The comment at the top of `packages/api/src/schema.ts` says this
+outright:
 
 ```ts
 /**
@@ -27,11 +27,11 @@ karta hai:
 ```
 `packages/api/src/schema.ts:3-9`
 
-Yani ek hi Zod schema update hote hi backend + dono frontend apps mein TypeScript error de degi agar koi jagah
-miss ho gayi — bug `pnpm typecheck` mein hi mil jaata hai, production mein nahi. Yeh sirf monorepo mein hi
-seedha possible hai kyunki sab ek hi `node_modules` graph share karte hain (`workspace:*` ke through).
+So the moment a single Zod schema is updated, TypeScript errors show up in the backend and both frontend apps if
+any place was missed — the bug surfaces in `pnpm typecheck`, not in production. This is only directly possible in
+a monorepo, because everything shares one `node_modules` graph (via `workspace:*`).
 
-Deploy simplicity dusra reason hai. `render.yaml` mein backend deploy karte waqt comment hai:
+Deploy simplicity is the second reason. `render.yaml` has this comment on the backend deploy:
 
 ```yaml
 # No `rootDir`: install has to run from the workspace root so pnpm can
@@ -42,28 +42,28 @@ Deploy simplicity dusra reason hai. `render.yaml` mein backend deploy karte waqt
 ```
 `render.yaml:5-9`
 
-Backend akela deploy nahi ho sakta bina poore workspace ke install hue — yeh monorepo ka trade-off hai, jiske
-against shared types/UI ka benefit hai.
+The backend can't be deployed on its own without the whole workspace being installed — that's the monorepo's
+trade-off, weighed against the benefit of shared types and UI.
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **Root `package.json`** mein koi app code nahi — sirf `turbo <task>` proxy karne wale scripts aur shared
-   devDependencies (`turbo`, `typescript`, `prettier`, do internal config packages). Root sirf orchestration hai.
+1. **The root `package.json`** contains no app code — just scripts that proxy to `turbo <task>` and shared
+   devDependencies (`turbo`, `typescript`, `prettier`, two internal config packages). The root is orchestration only.
 
-2. **`pnpm-workspace.yaml`** batata hai `apps/*` aur `packages/*` konse folders "packages" hain:
+2. **`pnpm-workspace.yaml`** declares which folders count as "packages" — `apps/*` and `packages/*`:
    ```yaml
    packages:
      - "apps/*"
      - "packages/*"
    ```
    `pnpm-workspace.yaml:1-3`
-   `pnpm install` root se chalane par, jab bhi ek package doosre ko `"workspace:*"` version se maangta hai
-   (jaise `apps/chatbot/package.json:20`'s `"@workspace/api": "workspace:*"`), pnpm usse `node_modules` mein
-   ek **symlink** bana deta hai — code copy nahi, seedha `packages/api/src` folder point hota hai. Isi liye
-   `packages/api` mein change karo to turant dono apps mein reflect ho jaata hai, publish/version-bump nahi
-   chahiye.
+   When you run `pnpm install` from the root, any time one package asks for another with a `"workspace:*"`
+   version (like `apps/chatbot/package.json:20`'s `"@workspace/api": "workspace:*"`), pnpm creates a
+   **symlink** for it in `node_modules` — no code is copied, it points straight at the `packages/api/src`
+   folder. That's why a change in `packages/api` shows up in both apps immediately, with no publish or
+   version bump needed.
 
-3. **`turbo.json`** har task ka dependency order define karta hai:
+3. **`turbo.json`** defines the dependency order for each task:
    ```json
    "build": {
      "dependsOn": ["^build"],
@@ -72,113 +72,113 @@ against shared types/UI ka benefit hai.
    }
    ```
    `turbo.json:5-9`
-   `"^build"` ka matlab "pehle mere workspace dependencies ka build chalao". Toh `apps/dashboard` build karte
-   waqt Turborepo pehle `packages/api`/`packages/ui` build karega (agar zaroorat ho), phir dashboard — yeh graph
-   `package.json` deps se hi derive hota hai, alag se likhna nahi padta.
+   `"^build"` means "run my workspace dependencies' build first". So when building `apps/dashboard`, Turborepo
+   builds `packages/api`/`packages/ui` first (if needed), then the dashboard — and that graph is derived from
+   the `package.json` deps, so it never has to be written out by hand.
 
-4. **Caching** — `outputs: ["dist/**"]` batata hai build ka result kahan store hua. Agar koi package ke
-   `inputs` last run se change nahi hue, Turborepo us package ka build skip kar deta hai aur cached output reuse
-   karta hai. Isi wajah se doosri baar `turbo build` bahut fast chalta hai.
+4. **Caching** — `outputs: ["dist/**"]` tells Turborepo where a build's result was stored. If a package's
+   `inputs` haven't changed since the last run, Turborepo skips that package's build and reuses the cached
+   output. That's why the second `turbo build` runs so much faster.
 
-5. **`dev` task** alag hai: `"cache": false, "persistent": true` (`turbo.json:19-22`) — long-running dev servers
-   (Vite, `tsx watch`) cache nahi kiye ja sakte aur kabhi khatam nahi hote, toh Turborepo bas inhe parallel start
-   karke chhod deta hai. `pnpm dev` ek saath backend (`:8788`), chatbot dev harness, aur dashboard start kar
-   deta hai (`README.md:20-25`).
+5. **The `dev` task is different**: `"cache": false, "persistent": true` (`turbo.json:19-22`) — long-running dev
+   servers (Vite, `tsx watch`) can't be cached and never exit, so Turborepo just starts them in parallel and
+   leaves them running. `pnpm dev` brings up the backend (`:8788`), the chatbot dev harness, and the dashboard
+   all at once (`README.md:20-25`).
 
-6. **Shared UI ka real workflow**:
+6. **The real shared-UI workflow**:
    ```bash
    pnpm dlx shadcn add <component> -c apps/dashboard
    ```
    `README.md:29-33`
-   Command dashboard se run hota hai, par file lands hoti hai `packages/ui/src/components` mein — kyunki
-   `packages/ui`'s `"exports"` field already `./components/*` ko `./src/components/*.tsx` pe map karta hai
-   (`packages/ui/package.json:46-51`). Dono apps usko `@workspace/ui/components/button` jaisa import karte hain.
+   The command runs from the dashboard, but the file lands in `packages/ui/src/components` — because
+   `packages/ui`'s `"exports"` field already maps `./components/*` to `./src/components/*.tsx`
+   (`packages/ui/package.json:46-51`). Both apps then import it as `@workspace/ui/components/button`.
 
 ## Code walkthrough
 
-- **`package.json:5-11`** — root scripts sirf `turbo <task>` proxy karte hain, koi build logic khud nahi rakhte.
+- **`package.json:5-11`** — the root scripts only proxy to `turbo <task>`; they hold no build logic of their own.
 
-- **`pnpm-workspace.yaml:4-7`** — `allowBuilds` list native/postinstall-script wale packages
-  (`better-sqlite3`, `esbuild`, `sharp`) ko explicitly allow karti hai — pnpm by default postinstall scripts
-  security ke liye block karta hai, yeh sirf trusted packages ke liye unblock karta hai.
+- **`pnpm-workspace.yaml:4-7`** — the `allowBuilds` list explicitly permits packages with native/postinstall
+  scripts (`better-sqlite3`, `esbuild`, `sharp`) — pnpm blocks postinstall scripts by default for security, and
+  this unblocks them only for trusted packages.
 
-- **`packages/rag/package.json:34-38`** aur **`packages/widgets/package.json:26-33`** dono multi-path
-  `"exports"` use karte hain (jaise `"./types": "./src/types.ts"`) — granular imports possible hain, jaise
-  `@workspace/rag/types` sirf types ke liye, poora pipeline import kiye bina.
+- **`packages/rag/package.json:34-38`** and **`packages/widgets/package.json:26-33`** both use multi-path
+  `"exports"` (like `"./types": "./src/types.ts"`) — which makes granular imports possible, e.g.
+  `@workspace/rag/types` for types alone, without importing the whole pipeline.
 
-- **`packages/backend/package.json:13-25`** — sirf yeh package `@ai-sdk/google` aur `@workspace/rag` dono depend
-  karta hai; koi frontend package AI provider SDK direct depend nahi karta. Yeh guarantee hai ki API key sirf
-  backend process mein hi load hoti hai.
+- **`packages/backend/package.json:13-25`** — this is the only package that depends on both `@ai-sdk/google` and
+  `@workspace/rag`; no frontend package depends on an AI provider SDK directly. That's the guarantee that the
+  API key is only ever loaded in the backend process.
 
-- **`turbo.json:10-18`** — `lint`/`format`/`typecheck` bhi `dependsOn: ["^<task>"]` rakhte hain, taaki
-  Turborepo inhe dependency-order mein hi chalaye aur per-package caching mile.
+- **`turbo.json:10-18`** — `lint`/`format`/`typecheck` also carry `dependsOn: ["^<task>"]`, so Turborepo runs
+  them in dependency order and per-package caching applies.
 
 ## Diagram
 
-Neeche diagram (`01-monorepo-and-tooling.excalidraw`) mein repo root se do dashed boxes nikalte hain —
-`apps/` (chatbot, dashboard, yellow) aur `packages/` (widgets, ui, api, backend, rag — alag colors mein).
-Arrows dikhate hain kaun kisko import karta hai: chatbot teeno — widgets, ui, api — import karta hai, dashboard
-sirf ui aur api. Do highlighted (red, motay) arrows `backend → api` aur `backend → rag` dikhate hain, saath ek
-caption note karta hai ki backend hi akela package hai jiske paas AI provider key hai. Excalidraw.com pe
-File → Open se ya canvas pe drag karke file import kar sakte ho.
+In the diagram below (`01-monorepo-and-tooling.excalidraw`), two dashed boxes branch off the repo root —
+`apps/` (chatbot, dashboard, in yellow) and `packages/` (widgets, ui, api, backend, rag — in different colors).
+Arrows show who imports whom: the chatbot imports all three of widgets, ui, and api; the dashboard imports only
+ui and api. Two highlighted (red, thick) arrows show `backend → api` and `backend → rag`, with a caption noting
+that the backend is the only package holding an AI provider key. You can import the file on excalidraw.com via
+File → Open, or by dragging it onto the canvas.
 
 ## Interview questions
 
-**Q: pnpm workspaces aur Turborepo mein kya difference hai?**
-A: pnpm workspaces sirf *dependency linking* karta hai — `pnpm-workspace.yaml` padh ke `workspace:*` deps ko
-symlink karta hai. Turborepo *task orchestration aur caching* karta hai — `turbo.json`'s `dependsOn: ["^build"]`
-order decide karta hai, `outputs` se result cache hota hai. Ek ke bina doosra bhi chalega, bas slower aur bina
-dependency-order guarantee ke.
+**Q: What's the difference between pnpm workspaces and Turborepo?**
+A: pnpm workspaces only handles *dependency linking* — it reads `pnpm-workspace.yaml` and symlinks `workspace:*`
+deps. Turborepo handles *task orchestration and caching* — `turbo.json`'s `dependsOn: ["^build"]` decides the
+order, and `outputs` caches the result. Either works without the other, just slower and with no dependency-order
+guarantee.
 
-**Q: `packages/api` ko "shared wire contract" kyun kaha jaata hai?**
-A: Yeh sirf types nahi, runtime validation bhi hai — Zod schemas backend mein incoming requests validate karte
-hain aur wahi schemas se derive TypeScript types dono apps compile-time pe use karte hain. Header comment khud
-kehta hai: field add karo to jo bhi half update karna bhool gaye wahan TypeScript break karega (`schema.ts:3-9`)
-— ek single source of truth, runtime + compile-time dono guarantees ke saath.
+**Q: Why is `packages/api` called the "shared wire contract"?**
+A: It isn't only types — it's runtime validation too. The Zod schemas validate incoming requests in the backend,
+and the TypeScript types derived from those same schemas are used by both apps at compile time. The header
+comment says it itself: add a field and TypeScript breaks whichever half you forgot to update (`schema.ts:3-9`)
+— one single source of truth, with both runtime and compile-time guarantees.
 
-**Q: `packages/ui` mein prop badalne par dashboard/chatbot ko turant pata chalega?**
-A: Haan, bina publish/version-bump ke — pnpm `@workspace/ui` ko dono apps ke `node_modules` mein seedha
-`packages/ui/src` pe symlink karta hai (`"workspace:*"`, `apps/dashboard/package.json:21`). `tsc -b` turant type
-error dega prop break hone par, aur Vite dev server hot-reload karega kyunki asli file hi import ho rahi hai.
+**Q: If a prop changes in `packages/ui`, do the dashboard and chatbot find out immediately?**
+A: Yes, with no publish or version bump — pnpm symlinks `@workspace/ui` in both apps' `node_modules` straight to
+`packages/ui/src` (`"workspace:*"`, `apps/dashboard/package.json:21`). `tsc -b` reports a type error immediately
+when a prop breaks, and the Vite dev server hot-reloads because it's importing the real file.
 
-**Q: `pnpm dlx shadcn add <component> -c apps/dashboard` chalane par component dashboard mein kyun nahi lands
-hota?**
-A: `-c apps/dashboard` sirf CLI ko Tailwind config/alias context batata hai; actual destination
-`packages/ui`'s `"exports"` field decide karta hai (`"./components/*": "./src/components/*.tsx"`,
-`packages/ui/package.json:46-51`) — CLI usi convention follow karta hai, README bhi isko explicit karta hai
+**Q: Why doesn't the component land in the dashboard when you run
+`pnpm dlx shadcn add <component> -c apps/dashboard`?**
+A: `-c apps/dashboard` only tells the CLI which Tailwind config/alias context to use; the actual destination is
+decided by `packages/ui`'s `"exports"` field (`"./components/*": "./src/components/*.tsx"`,
+`packages/ui/package.json:46-51`) — the CLI follows that convention, and the README makes it explicit too
 (`README.md:29-33`).
 
-**Q: `turbo dev`'s `"cache": false, "persistent": true` kyun hai jabki `build` cache hoti hai?**
-A: `dev` ek never-exiting process hai (Vite dev server, `tsx watch`) jiska output deterministic nahi — cache
-karna galat hoga. `persistent: true` batata hai yeh background mein chalte rehna chahiye. `build` opposite hai —
-deterministic `dist/**` output jo safely cache/reuse ho sakta hai (`turbo.json:5-9, 19-22`).
+**Q: Why is `turbo dev` set to `"cache": false, "persistent": true` when `build` is cached?**
+A: `dev` is a never-exiting process (Vite dev server, `tsx watch`) whose output isn't deterministic — caching it
+would be wrong. `persistent: true` says it should keep running in the background. `build` is the opposite —
+deterministic `dist/**` output that can safely be cached and reused (`turbo.json:5-9, 19-22`).
 
-**Q: Render pe backend deploy karte waqt `rootDir` kyun nahi set kiya?**
-A: `packages/backend`'s `workspace:*` deps (`@workspace/api`, `@workspace/rag`) sirf tab resolve hote hain jab
-poore workspace root se install ho (symlinks banane ke liye). `render.yaml`'s comment isko explicit karta hai
-(`render.yaml:5-9`) — `rootDir` set karte to install isolated chalta aur deps miss ho jaate. `buildCommand` root
-se install karta hai, `startCommand` `pnpm --filter @workspace/backend start` se specifically backend start
-karta hai.
+**Q: Why isn't `rootDir` set when deploying the backend on Render?**
+A: `packages/backend`'s `workspace:*` deps (`@workspace/api`, `@workspace/rag`) only resolve when the install
+runs from the full workspace root (so the symlinks get created). `render.yaml`'s comment makes this explicit
+(`render.yaml:5-9`) — setting `rootDir` would install it in isolation and the deps would be missing. The
+`buildCommand` installs from the root, and the `startCommand` starts the backend specifically with
+`pnpm --filter @workspace/backend start`.
 
-**Q: Agar `packages/widgets` ko `packages/backend` import karna pade, kya woh architecture break hogi?**
-A: Haan — `packages/widgets`'s deps mein sirf `@workspace/ui`, `react`, `zod` hain
-(`packages/widgets/package.json:10-16`), backend nahi. Yeh isko "pure render-a-tree logic" rakhta hai, jahan
-bhi React chale reusable. Backend import karne se yeh guarantee toot jaayegi aur server-only code (jaise
-`better-sqlite3`) browser bundle mein khinch sakta hai.
+**Q: If `packages/backend` had to import `packages/widgets`, would that break the architecture?**
+A: Yes — `packages/widgets`'s deps are only `@workspace/ui`, `react`, and `zod`
+(`packages/widgets/package.json:10-16`), not the backend. That keeps it "pure render-a-tree logic", reusable
+anywhere React runs. Importing the backend would break that guarantee and could pull server-only code (like
+`better-sqlite3`) into the browser bundle.
 
-**Q: Naya `packages/analytics` (sirf backend use karega) add karna ho, kya-kya touch karna padega?**
-A: `pnpm-workspace.yaml` change nahi karna (already `packages/*` match karta hai) — `package.json` bana ke
-`name: "@workspace/analytics"` set karo, `packages/backend/package.json` mein
-`"@workspace/analytics": "workspace:*"` add karo, phir `pnpm install` chalao symlink banane ke liye. `turbo.json`
-touch nahi karna kyunki task-graph automatically deps se derive hota hai.
+**Q: To add a new `packages/analytics` (used only by the backend), what would you have to touch?**
+A: Not `pnpm-workspace.yaml` (it already matches `packages/*`) — create a `package.json` with
+`name: "@workspace/analytics"`, add `"@workspace/analytics": "workspace:*"` to
+`packages/backend/package.json`, then run `pnpm install` to create the symlink. You don't touch `turbo.json`,
+because the task graph is derived automatically from the deps.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- `"workspace:*"` ka matlab "koi bhi version chalega" nahi hai — matlab hai "hamesha local monorepo wala version
-  use karo", npm registry se kabhi resolve nahi hoga.
-- `turbo.json`'s `dependsOn: ["^build"]` koi manual list nahi — `^` prefix ka matlab "workspace dependency graph
-  follow karo" (package.json deps se derive), khud se package name likhna nahi padta.
-- `apps/chatbot/package.json` mein `@workspace/api` dekh ke lagta hai published npm package hai jo republish
-  chahiye update ke liye — actually symlinked local folder hai, edit karo aur turant reflect hoga.
-- Root `package.json` mein `dependencies` na dekh ke confuse hote hain "app kaise chalega" — root sirf
-  orchestration hai, real code aur deps har package ke andar hain.
+- `"workspace:*"` doesn't mean "any version will do" — it means "always use the local monorepo version"; it will
+  never resolve from the npm registry.
+- `turbo.json`'s `dependsOn: ["^build"]` isn't a manual list — the `^` prefix means "follow the workspace
+  dependency graph" (derived from package.json deps), so you never have to write package names yourself.
+- Seeing `@workspace/api` in `apps/chatbot/package.json` makes it look like a published npm package that needs a
+  republish to update — it's actually a symlinked local folder; edit it and the change shows up immediately.
+- People get confused by the lack of `dependencies` in the root `package.json` and wonder "how does the app even
+  run" — the root is orchestration only; the real code and deps live inside each package.

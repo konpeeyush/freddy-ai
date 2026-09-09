@@ -1,45 +1,45 @@
 # Storage Layer — SQLite vs pgvector
-_Ek hi `Store` interface ke peeche, do alag databases chhupe hain — dev mein SQLite, scale pe Postgres._
+_Two different databases hidden behind one `Store` interface — SQLite in dev, Postgres at scale._
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-RAG pipeline (crawl → extract → chunk → embed → **store**) ko chunks aur unke embeddings (vector — text ka numeric representation) kahin save karne hain, aur baad mein search karne hain. `packages/rag/src/types.ts` mein ek `Store` interface hai jo bas contract define karta hai — implementation nahi. Do classes usse implement karti hain: `SqliteStore` (dev/default, better-sqlite3 pe) aur `PgVectorStore` (production scale, Postgres + pgvector pe).
+The RAG pipeline (crawl → extract → chunk → embed → **store**) has to save chunks and their embeddings (a vector — the numeric representation of text) somewhere, and search them later. `packages/rag/src/types.ts` has a `Store` interface that only defines the contract — no implementation. Two classes implement it: `SqliteStore` (dev/default, on better-sqlite3) and `PgVectorStore` (production scale, on Postgres + pgvector).
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Pipeline ka baaki hissa — `ingest.ts` aur `search.ts` — kabhi seedha SQLite ya Postgres se baat nahi karta, sirf `Store` interface se karta hai (dono `store: Store` type lete hain — `search.ts:80`, `ingest.ts:49`). `types.ts:1-9` khud yeh likh deta hai:
+The rest of the pipeline — `ingest.ts` and `search.ts` — never talks to SQLite or Postgres directly, only to the `Store` interface (both take a `store: Store` — `search.ts:80`, `ingest.ts:49`). `types.ts:1-9` says it itself:
 
 > `Store` exists so the dev harness can run on SQLite with nothing installed while the same search code later runs on pgvector. Everything above it — crawl, extract, chunk, embed, search — is written against this interface and has never heard of either.
 
-Matlab: DB swap karna ho toh ek nayi class likhni hogi, `search.ts` ya `ingest.ts` ki ek line bhi nahi badalni padegi.
+Meaning: to swap the DB you write one new class, and don't change a single line of `search.ts` or `ingest.ts`.
 
-Doosra decision: dev store ke liye `sqlite-vec` (SQLite ka loadable vector extension) use nahi kiya. `sqlite.ts:5-11` ka comment seedha bataata hai kyun:
+The second decision: `sqlite-vec` (SQLite's loadable vector extension) wasn't used for the dev store. The comment at `sqlite.ts:5-11` says why, directly:
 
 > macOS ships a system SQLite compiled without extension support — so using it means telling every developer to install SQLite from Homebrew and wire up extension loading before the app will start. For a harness whose whole promise is "clone it and run it", that trade is wrong.
 
-Isliye `better-sqlite3` — apna bundled SQLite binary laata hai, jisme FTS5 (keyword search) already compiled hai. Hybrid search (vector + keyword) isliye "free" mil jaata hai.
+Hence `better-sqlite3` — it brings its own bundled SQLite binary, with FTS5 (keyword search) already compiled in. That's what makes hybrid search (vector + keyword) come "for free".
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **Startup pe decision.** `db.ts:33-49` check karta hai `DATABASE_URL` set hai ya nahi. Nahi — `new SqliteStore(sqlite)`. Haan — `new PgVectorStore(pool)` + `await pgStore.migrate()`. Dono cases mein `store` variable sirf `Store` type ka hota hai.
+1. **The decision at startup.** `db.ts:33-49` checks whether `DATABASE_URL` is set. If not — `new SqliteStore(sqlite)`. If yes — `new PgVectorStore(pool)` + `await pgStore.migrate()`. In both cases the `store` variable is typed as just `Store`.
 
-2. **Ingest (`upsertPage`).** Page crawl+chunk+embed hone ke baad `store.upsertPage()` call hota hai — purane chunks delete, naye insert, ek transaction ke andar (SQLite: `db.transaction()`, `sqlite.ts:211`; Postgres: `BEGIN`/`COMMIT`, `pgvector.ts:158`).
+2. **Ingest (`upsertPage`).** After a page is crawled, chunked, and embedded, `store.upsertPage()` is called — old chunks deleted, new ones inserted, inside one transaction (SQLite: `db.transaction()`, `sqlite.ts:211`; Postgres: `BEGIN`/`COMMIT`, `pgvector.ts:158`).
 
-3. **Embedding storage.** SQLite mein `Float32Array` ka buffer seedha raw `BLOB` ban jaata hai (`sqlite.ts:239-243`). Postgres mein yeh real `vector(768)` typed column hai, text literal `[0.1,0.2,...]` format mein (`toVectorLiteral`, `pgvector.ts:49-51`).
+3. **Embedding storage.** In SQLite the `Float32Array`'s buffer becomes a raw `BLOB` directly (`sqlite.ts:239-243`). In Postgres it's a real `vector(768)` typed column, in the `[0.1,0.2,...]` text-literal format (`toVectorLiteral`, `pgvector.ts:49-51`).
 
-4. **Vector search — sabse bada farak.** `SqliteStore.searchVector` (`sqlite.ts:356-382`) saare tenant vectors memory mein load karke JS loop mein cosine `similarity()` compute karta hai — brute force, koi index nahi. `PgVectorStore.searchVector` (`pgvector.ts:222-241`) yehi kaam Postgres ke andar `ORDER BY embedding <=> $2::vector` se karwata hai — server-side, par woh bhi abhi sequential scan hi hai, ANN index (HNSW) nahi hai.
+4. **Vector search — the biggest difference.** `SqliteStore.searchVector` (`sqlite.ts:356-382`) loads all of the tenant's vectors into memory and computes cosine `similarity()` in a JS loop — brute force, no index. `PgVectorStore.searchVector` (`pgvector.ts:222-241`) gets the same work done inside Postgres with `ORDER BY embedding <=> $2::vector` — server-side, though that too is still a sequential scan today; there's no ANN index (HNSW).
 
-5. **Keyword search dono jagah.** SQLite mein FTS5 + `bm25()` (`sqlite.ts:384-424`); Postgres mein generated `tsvector` + GIN index + `ts_rank` (`pgvector.ts:243-289`). Dono jagah query ko words mein split karke `OR` se jodte hain, taaki special characters syntax na todein aur ek term match hone pe bhi result mile.
+5. **Keyword search in both.** In SQLite it's FTS5 + `bm25()` (`sqlite.ts:384-424`); in Postgres a generated `tsvector` + GIN index + `ts_rank` (`pgvector.ts:243-289`). Both split the query into words joined with `OR`, so special characters can't break the syntax and a single matching term still returns results.
 
-6. **In-memory cache (SQLite-only).** Har query pe BLOB deserialize karna slow step hota — isliye `Map<tenantId, Index>` cache lazily banta hai (`sqlite.ts:334-354`) aur kisi bhi write pe drop ho jaata hai (`this.indexes.delete(tenantId)`).
+6. **An in-memory cache (SQLite only).** Deserializing BLOBs on every query would be the slow step — so a `Map<tenantId, Index>` cache is built lazily (`sqlite.ts:334-354`) and dropped on any write (`this.indexes.delete(tenantId)`).
 
-7. **WAL mode dono jagah on hai** (`sqlite.ts:65`, `db.ts:46`) — taaki ingest ka write, search ke read ko block na kare; dono concurrently chal sakte hain.
+7. **WAL mode is on in both places** (`sqlite.ts:65`, `db.ts:46`) — so an ingest's write doesn't block a search's read; the two can run concurrently.
 
-8. **Ek hi file, do purpose.** `SqliteStore`'s constructor already-open `Database.Database` bhi le sakta hai (`sqlite.ts:61-62`) — backend apna connection seedha pass karta hai (`db.ts:45-48`), toh RAG tables aur app ki `conversations`/`documents` tables ek hi `.db` file mein rehti hain.
+8. **One file, two purposes.** `SqliteStore`'s constructor can also take an already-open `Database.Database` (`sqlite.ts:61-62`) — the backend passes its own connection straight in (`db.ts:45-48`), so the RAG tables and the app's `conversations`/`documents` tables live in the same `.db` file.
 
 ## Code walkthrough
 
-- **`packages/rag/src/types.ts:90-126`** — `Store` interface ki poori definition, jise dono implementations follow karti hain.
+- **`packages/rag/src/types.ts:90-126`** — the full `Store` interface definition, which both implementations follow.
   ```ts
   export interface Store {
     indexModel(tenantId: string): Promise<string | undefined>
@@ -49,7 +49,7 @@ Isliye `better-sqlite3` — apna bundled SQLite binary laata hai, jisme FTS5 (ke
   }
   ```
 
-- **`packages/rag/src/store/sqlite.ts:356-368`** — brute-force cosine, seedha O(n) scan:
+- **`packages/rag/src/store/sqlite.ts:356-368`** — brute-force cosine, a plain O(n) scan:
   ```ts
   const { ids, vectors } = this.index(tenantId)
   const scored: { id: string; score: number }[] = []
@@ -59,7 +59,7 @@ Isliye `better-sqlite3` — apna bundled SQLite binary laata hai, jisme FTS5 (ke
   scored.sort((a, b) => b.score - a.score)
   ```
 
-- **`packages/rag/src/store/pgvector.ts:228-236`** — wahi kaam, DB ke andar `<=>` operator se:
+- **`packages/rag/src/store/pgvector.ts:228-236`** — the same work, inside the DB via the `<=>` operator:
   ```ts
   `SELECT id, url, title, headings, question, text, tokens,
           1 - (embedding <=> $2::vector) AS score
@@ -67,9 +67,9 @@ Isliye `better-sqlite3` — apna bundled SQLite binary laata hai, jisme FTS5 (ke
    ORDER BY embedding <=> $2::vector LIMIT $3`
   ```
 
-- **`packages/rag/src/store/sqlite.ts:91-97`** — composite key `(tenant_id, id)`: chunk id sirf `url#position` hota hai, do tenants same public docs site index kar sakte hain — `id` akela primary key hota toh doosra ingest UNIQUE-constraint pe fail hota.
+- **`packages/rag/src/store/sqlite.ts:91-97`** — the composite key `(tenant_id, id)`: a chunk id is only `url#position`, and two tenants can index the same public docs site — with `id` alone as the primary key, the second ingest would fail on a UNIQUE constraint.
 
-- **`packages/backend/src/db.ts:38-49`** — actual decision kahan hota hai:
+- **`packages/backend/src/db.ts:38-49`** — where the actual decision happens:
   ```ts
   if (databaseUrl) {
     const pool = new Pool({ connectionString: databaseUrl })
@@ -81,41 +81,41 @@ Isliye `better-sqlite3` — apna bundled SQLite binary laata hai, jisme FTS5 (ke
   }
   ```
 
-- **`packages/rag/src/store/pgvector.ts:9-15`** — file-header comment: abhi koi ANN index (HNSW) nahi, "worth adding once a tenant's chunk count actually makes a sequential scan show up in latency — not before."
+- **`packages/rag/src/store/pgvector.ts:9-15`** — the file-header comment: there's no ANN index (HNSW) yet, "worth adding once a tenant's chunk count actually makes a sequential scan show up in latency — not before."
 
 ## Diagram
 
-Neel diagram (`10-storage-layer.excalidraw`) mein dikhaya gaya hai ki `search.ts` aur `ingest.ts` sirf beech mein baithe `Store` interface box se baat karte hain — dono se arrows upar se `Store` box mein jaate hain. Store box se neeche ek decision diamond hai (`DATABASE_URL set? — db.ts`), jahan se do arrows nikal ke do implementation boxes mein jaate hain: `SqliteStore` (better-sqlite3, FTS5 keyword search, brute-force cosine JS loop, WAL mode) aur `PgVectorStore` (Postgres + pgvector, server-side `<=>` distance). Dono boxes ke neeche chhote captions hain — SqliteStore ke neeche "few thousand chunks ≈ 1ms brute force — good enough until it isn't", PgVectorStore ke neeche "no ANN index yet — sequential scan". File kholne ke liye excalidraw.com par File → Open, ya seedha canvas pe drag-drop kar dijiye.
+The diagram (`10-storage-layer.excalidraw`) shows `search.ts` and `ingest.ts` talking only to the `Store` interface box sitting between them — arrows run down from both into the `Store` box. Below the Store box is a decision diamond (`DATABASE_URL set? — db.ts`), from which two arrows lead into the two implementation boxes: `SqliteStore` (better-sqlite3, FTS5 keyword search, brute-force cosine JS loop, WAL mode) and `PgVectorStore` (Postgres + pgvector, server-side `<=>` distance). Small captions sit under each — under SqliteStore, "few thousand chunks ≈ 1ms brute force — good enough until it isn't", and under PgVectorStore, "no ANN index yet — sequential scan". To open the file, use File → Open on excalidraw.com, or just drag it onto the canvas.
 
 ## Interview questions
 
-**Q: `Store` interface kyun banaya, seedha concrete class kyun nahi use kar liya?**
-A: Taaki `ingest.ts`/`search.ts` kabhi na jaane underlying DB kya hai. Dev harness SQLite pe "clone karo aur chalao" chalta hai, production `DATABASE_URL` set karke Postgres pe switch ho jaata hai — bina pipeline code touch kiye. Classic dependency inversion.
+**Q: Why build a `Store` interface instead of just using the concrete class directly?**
+A: So `ingest.ts`/`search.ts` never know what the underlying DB is. The dev harness runs "clone it and run it" on SQLite, and production switches to Postgres by setting `DATABASE_URL` — without touching pipeline code. Classic dependency inversion.
 
-**Q: `sqlite-vec` kyun nahi use kiya dev store mein?**
-A: macOS ka system SQLite extension-loading ke bina compiled aata hai, toh sqlite-vec use karne ka matlab har developer ko Homebrew se SQLite install karwana. `better-sqlite3` apna bundled binary laata hai jisme FTS5 already hai — "clone and run" promise nahi tootata.
+**Q: Why wasn't `sqlite-vec` used for the dev store?**
+A: macOS's system SQLite ships compiled without extension loading, so using sqlite-vec would mean making every developer install SQLite from Homebrew. `better-sqlite3` brings its own bundled binary with FTS5 already in it — the "clone and run" promise stays intact.
 
-**Q: Brute-force vector search production mein problem kyun nahi hai (abhi)?**
-A: Typical docs site kuch hazaar chunks ka hota hai, aur kuch hazaar dot products (768-dim) compute karna ~1ms leta hai — embedding API call ke network round trip ke saamne noise hai. Tens/hundreds of thousands chunks tak pahunchne pe `PgVectorStore` pe switch karne ka signal milta hai.
+**Q: Why isn't brute-force vector search a problem in production (for now)?**
+A: A typical docs site is a few thousand chunks, and computing a few thousand dot products (768-dim) takes ~1ms — noise next to the network round trip of the embedding API call. Reaching tens or hundreds of thousands of chunks is the signal to switch to `PgVectorStore`.
 
-**Q: WAL mode kyun explicit enable kiya?**
-A: Default journal mode mein writes readers ko block karte hain. WAL mein ingest ka write aur dashboard ka search read genuinely concurrently chal sakte hain — dono jagah (`sqlite.ts`, `db.ts`) set kiya gaya hai.
+**Q: Why is WAL mode explicitly enabled?**
+A: In the default journal mode, writes block readers. In WAL, an ingest's write and the dashboard's search read can genuinely run concurrently — it's set in both places (`sqlite.ts`, `db.ts`).
 
-**Q: In-memory index cache kab invalidate hota hai?**
-A: Har write (`upsertPage`, `deletePage`, `clear`, etc.) pe `this.indexes.delete(tenantId)` se turant drop hota hai, aur agli search pe lazily rebuild hota hai — taaki stale vectors serve na hon.
+**Q: When does the in-memory index cache get invalidated?**
+A: On every write (`upsertPage`, `deletePage`, `clear`, etc.) it's dropped immediately via `this.indexes.delete(tenantId)` and rebuilt lazily on the next search — so stale vectors are never served.
 
-**Q: Chunk table ki key `(tenant_id, id)` kyun, `id` akela kyun nahi?**
-A: Chunk id `url#position` hai — sirf ek page ke andar unique. Do tenants same public docs site crawl karein toh same id milega; `id` akela key hota toh doosra tenant UNIQUE-constraint pe fail hota. `rebuildStaleChunks()` purane DBs ko is fix pe migrate bhi karta hai.
+**Q: Why is the chunk table's key `(tenant_id, id)` rather than just `id`?**
+A: A chunk id is `url#position` — unique only within a page. If two tenants crawl the same public docs site they get the same ids; with `id` alone as the key, the second tenant would fail on a UNIQUE constraint. `rebuildStaleChunks()` also migrates older DBs onto this fix.
 
-**Q: Ek third store add karna ho toh kya karna padega?**
-A: `Store` implement karti nayi class likhni padegi, aur `db.ts` mein ek teesra branch add karna padega jo sahi condition pe usse instantiate kare. `ingest.ts`/`search.ts` ki ek line touch nahi karni padegi.
+**Q: What would it take to add a third store?**
+A: Write a new class implementing `Store`, and add a third branch in `db.ts` that instantiates it under the right condition. Not one line of `ingest.ts`/`search.ts` has to be touched.
 
-**Q: `EmbeddingModelMismatch` kis problem ko rokta hai?**
-A: Do alag models same dimension (768) ke vectors bana sakte hain — mismatch pe crash nahi hota, balki confidently-ranked par unrelated results milte hain jo phir fact ki tarah cite ho jaate hain. `indexModel`/`setIndexModel` har search se pehle check karte hain, mismatch pe typed error throw hota hai.
+**Q: What problem does `EmbeddingModelMismatch` prevent?**
+A: Two different models can produce vectors of the same dimension (768) — so a mismatch doesn't crash, it produces confidently-ranked but unrelated results, which then get cited as fact. `indexModel`/`setIndexModel` check before every search, and a typed error is thrown on a mismatch.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- SQLite store ko "sirf dev ke liye toy" samajhna — brute-force cosine perfectly correct hai, sirf naive lagta hai; issue scale ka hai, correctness ka nahi.
-- `sqlite-vec` aur `better-sqlite3` ko same samajhna — `sqlite-vec` loadable vector extension hai (default store mein hai hi nahi), `better-sqlite3` bundled-SQLite npm package hai (FTS5 ke saath, vector extension ke bina).
-- `PgVectorStore` ko "ANN index wala asli scale solution" samajhna — abhi koi HNSW index nahi hai, woh bhi sequential scan hi karta hai, bas server-side.
-- In-memory `indexes` cache ko per-request cache samajhna — asal mein yeh process-lifetime cache hai, sirf write pe invalidate hota hai.
+- Treating the SQLite store as "just a dev toy" — brute-force cosine is perfectly correct, it only looks naive; the issue is scale, not correctness.
+- Treating `sqlite-vec` and `better-sqlite3` as the same thing — `sqlite-vec` is a loadable vector extension (not in the default store at all), while `better-sqlite3` is an npm package with a bundled SQLite (with FTS5, without the vector extension).
+- Treating `PgVectorStore` as "the real scale solution with an ANN index" — there's no HNSW index yet; it also does a sequential scan, just server-side.
+- Reading the in-memory `indexes` cache as a per-request cache — it's actually a process-lifetime cache, invalidated only on a write.

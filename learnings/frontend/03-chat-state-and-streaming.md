@@ -1,17 +1,17 @@
 # Chat State & Streaming
-_useChat hook ke andar kya chal raha hai — settled state Query mein, in-flight stream plain React state mein_
+_What's going on inside the useChat hook — settled state in Query, the in-flight stream in plain React state_
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-`useChat` (`apps/chatbot/src/chat/use-chat.ts`) poore chat panel ka dimaag hai — messages, streaming reply, tool calls, sab yahin se aata hai. Isme do alag "state ke ghar" hain: **settled conversation** (finish ho chuki) TanStack Query ke cache mein, aur **in-flight stream** (abhi type ho rahi) plain React `useState` mein. Yeh split hi is poore file ki spine hai.
+`useChat` (`apps/chatbot/src/chat/use-chat.ts`) is the brain of the whole chat panel — messages, the streaming reply, tool calls, all of it comes from here. It has two separate "homes" for state: the **settled conversation** (already finished) in the TanStack Query cache, and the **in-flight stream** (still being typed out) in plain React `useState`. That split is the spine of this entire file.
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Do alag problems, do alag solutions:
+Two different problems, two different solutions:
 
-Conversation ko panel close/reopen survive karni hai, aur ek jagah se pending/error read hona chahiye — TanStack Query yeh free mein deta hai, isliye conversation `["conversation"]` key ke neeche Query cache mein hai (`use-chat.ts:36-39`).
+The conversation has to survive the panel being closed and reopened, and pending/error state should be readable from one place — TanStack Query gives that for free, so the conversation lives in the Query cache under the `["conversation"]` key (`use-chat.ts:36-39`).
 
-Lekin streaming ke liye Query galat tool hai. Query apne subscribers ko `notifyManager` se batch karke notify karta hai, apne hi schedule pe — jo React se match nahi karta. Team ne actual mein try kiya tha har token seedha cache mein likhna:
+But Query is the wrong tool for streaming. Query notifies its subscribers in batches through `notifyManager`, on its own schedule, which doesn't line up with React's. The team actually tried writing every token straight into the cache:
 
 ```ts
 // apps/chatbot/src/chat/use-chat.ts:304-312
@@ -21,35 +21,35 @@ Lekin streaming ke liye Query galat tool hai. Query apne subscribers ko `notifyM
  * conversation; only the token buffer is local.
 ```
 
-Isliye `streamingText`, `streamingWidgets`, `streamingSources` teeno plain `useState` hain — React ko turant re-render karwate hain, per token, batching ka wait nahi.
+So `streamingText`, `streamingWidgets`, and `streamingSources` are all plain `useState` — they re-render React immediately, per token, with no batching to wait on.
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **User type karta hai, `send(text)` call hota hai** → TanStack `useMutation` ka `.mutate()` (`use-chat.ts:745-752`). Mutation poore turn ka owner hai; uska `isPending` "waiting" indicator drive karta hai.
+1. **The user types and `send(text)` is called** → TanStack `useMutation`'s `.mutate()` (`use-chat.ts:745-752`). The mutation owns the whole turn; its `isPending` drives the "waiting" indicator.
 
-2. User message turant Query cache mein likha jaata hai, aur best-effort backend ko persist bhi ho jaata hai (fire-and-forget — fail ho toh chat nahi todhta).
+2. The user's message is written into the Query cache immediately, and also persisted to the backend on a best-effort basis (fire-and-forget — a failure doesn't break the chat).
 
-3. **Round loop shuru**: `for (round = 0; round < roundsNeeded(MAX_TOOL_ROUNDS); round += 1)`. `MAX_TOOL_ROUNDS = 5` server ke step limit mirror karta hai. Har round `streamChat()` — async generator jo SSE yield karta hai — chalata hai.
+3. **The round loop starts**: `for (round = 0; round < roundsNeeded(MAX_TOOL_ROUNDS); round += 1)`. `MAX_TOOL_ROUNDS = 5` mirrors the server's step limit. Each round runs `streamChat()` — an async generator that yields SSE events.
 
-4. **Har SSE event ka apna `kind` hai**, har kind alag state chhoota hai:
-   - `text` → `received` mein append, `setStreamingText(received)` — cursor-wali animated text.
-   - `tool-start`/`tool-end` → server tool: `activeTool` set/clear, output se sources `streamingSources` mein merge.
-   - `client-tool-call` → tool BROWSER ko khud chalana hai. Turant nahi, `outstanding` mein hold, jab tak stream drain na ho.
-   - `widget` → rich UI card. `closeTextPart()` pehle (pichla text apna part ban jaata hai), widget `parts` mein push, `setStreamingWidgets` se turant dikh jaata hai.
+4. **Every SSE event has its own `kind`**, and each kind touches different state:
+   - `text` → appended to `received`, then `setStreamingText(received)` — the animated text with the cursor.
+   - `tool-start`/`tool-end` → a server tool: set/clear `activeTool`, and merge sources from the output into `streamingSources`.
+   - `client-tool-call` → a tool the BROWSER has to run itself. Not immediately — it's held in `outstanding` until the stream drains.
+   - `widget` → a rich UI card. `closeTextPart()` first (the preceding text becomes its own part), the widget is pushed into `parts`, and `setStreamingWidgets` makes it appear right away.
 
-5. Round ke end pe `outstanding.length === 0` matlab koi client tool pending nahi — turn yahin khatam.
+5. At the end of a round, `outstanding.length === 0` means no client tool is pending — the turn ends here.
 
-6. Warna har pending tool `runTool()` se chalta hai. **Client tool poore turn ko pause kar deta hai** — model call emit, stream khatam, browser tool chalta hai, result `outbound` mein append, agla round shuru. Isi wajah se "loop of rounds" hai, single request nahi.
+6. Otherwise every pending tool runs via `runTool()`. **A client tool pauses the whole turn** — the model emits the call, the stream ends, the browser runs the tool, the result is appended to `outbound`, and the next round starts. That's exactly why this is a "loop of rounds" rather than a single request.
 
-7. **Sequences** (`tools/sequences.ts`) bhi yahin check hoti hain — guided flow (booking wizard) chal raha ho toh `advance()` agle step pe le jaati hai, aur `turnToolChoice()`/`turnInstruction()` model ko agle round mein ek specific tool call pe force karte hain.
+7. **Sequences** (`tools/sequences.ts`) are checked here too — if a guided flow (a booking wizard) is running, `advance()` moves it to the next step, and `turnToolChoice()`/`turnInstruction()` force the model into a specific tool call on the next round.
 
-8. **Turn settle hota hai** loop khatam hone pe (naturally, ya `awaitingVisitor` flag ke saath jab model ne visitor se kuch poocha hai). Ek `ChatMessage` banta hai, **ek hi `write()` call** se Query cache mein commit — jo internally `saveChat()` bhi chalata hai, matlab localStorage bhi same funnel se update.
+8. **The turn settles** when the loop ends (naturally, or with the `awaitingVisitor` flag when the model has asked the visitor something). A `ChatMessage` is built and committed to the Query cache in a **single `write()` call** — which internally also runs `saveChat()`, so localStorage updates through the same funnel.
 
-9. Cleanup same tick pe: streaming state clear ho jaata hai taaki koi frame aisa na ho jahan buffer gaya ho but message render na hua ho.
+9. Cleanup happens on the same tick: streaming state is cleared so there's never a frame where the buffer is gone but the message hasn't rendered yet.
 
 ## Code walkthrough
 
-- **`use-chat.ts:329-334`** — messages Query cache se read hote hain, khaali ho toh `loadChat()` se seed:
+- **`use-chat.ts:329-334`** — messages are read from the Query cache, and seeded from `loadChat()` if empty:
 ```ts
 const messages =
   queryClient.getQueryData<ChatMessage[]>(conversationKey) ??
@@ -59,7 +59,7 @@ const messages =
   }) as ChatMessage[])
 ```
 
-- **`use-chat.ts:351-360`** — `write()` woh ek funnel hai jisse *har* settled change guzarta hai, isliye persistence isi pe hang karti hai:
+- **`use-chat.ts:351-360`** — `write()` is the single funnel *every* settled change passes through, which is why persistence hangs off it:
 ```ts
 const write = useCallback(
   (update: (current: ChatMessage[]) => ChatMessage[]) => {
@@ -73,50 +73,50 @@ const write = useCallback(
 )
 ```
 
-- **`use-chat.ts:679-680`** — ek bhi token diye bina stream close ho jaaye toh failed turn maana jaata hai, empty answer nahi: `if (!started) throw new Error("no response from the assistant")`
+- **`use-chat.ts:679-680`** — a stream that closes without emitting a single token counts as a failed turn, not an empty answer: `if (!started) throw new Error("no response from the assistant")`
 
-- **`use-chat.ts:233-245`** — `settledIds` module-scope `Set` hai (component state nahi), taaki commit render aur cache-notification ki race na ho: dono ka schedule alag hai, aur cache-write render pehle jeete toh finished reply "slide up" jaisi dikhti thi.
+- **`use-chat.ts:233-245`** — `settledIds` is a module-scope `Set` (not component state), so the commit render and the cache notification can't race: they're scheduled differently, and when the cache write won the race the finished reply visibly "slid up".
 
-- **`store.ts:89-96`** — `saveChat()` `MAX_STORED_MESSAGES = 100` tak trim karta hai, quota error pe progressively shorter tail try karta hai (`[full, 20, 10, 4, 1]`) — localStorage host page ke saath shared hai.
+- **`store.ts:89-96`** — `saveChat()` trims to `MAX_STORED_MESSAGES = 100` and, on a quota error, retries with progressively shorter tails (`[full, 20, 10, 4, 1]`) — localStorage is shared with the host page.
 
-- **`store.ts:52-80`** — `loadChat()` har message `ChatMessageSchema.safeParse` se re-validate karta hai; purana message naye schema se match na kare toh silently drop, poora array crash kiye bina.
+- **`store.ts:52-80`** — `loadChat()` re-validates every message with `ChatMessageSchema.safeParse`; an old message that doesn't match the new schema is silently dropped, without crashing the whole array.
 
 ## Diagram
 
-Neel diagram (`03-chat-state-and-streaming.excalidraw`) mein dikhaya gaya hai ki `send()` se turn settle hone tak state kaise flow karti hai. Top se: "User types → send()" box, phir "Mutation starts, round=0" box, phir bada "for each round: stream SSE events" loop box jisse 4 branches nikalte hain — text-delta (→ `setStreamingText`), tool-start/end (→ `activeTool` + `streamingSources`), client-tool-call (→ held in `outstanding`), widget (→ `setStreamingWidgets`). Uske neeche diamond "outstanding client tools?" hai — haan toh `runTool()`, arrow loop wapas C box tak jaata hai; nahi toh "Turn settles → write() → Query cache + localStorage" box. Colours se do zones alag dikhte hain: blue/yellow/orange plain React state hai (fast, per-token), green box jahan Query cache aur localStorage ek commit mein update hote hain. Excalidraw.com → File → Open, ya file canvas pe drag karo.
+The diagram (`03-chat-state-and-streaming.excalidraw`) shows how state flows from `send()` until the turn settles. From the top: a "User types → send()" box, then "Mutation starts, round=0", then a large "for each round: stream SSE events" loop box with four branches coming off it — text-delta (→ `setStreamingText`), tool-start/end (→ `activeTool` + `streamingSources`), client-tool-call (→ held in `outstanding`), and widget (→ `setStreamingWidgets`). Below it is a diamond, "outstanding client tools?" — yes goes to `runTool()`, with an arrow looping back to box C; no goes to "Turn settles → write() → Query cache + localStorage". Colors separate the two zones: blue/yellow/orange is plain React state (fast, per-token), and the green box is where the Query cache and localStorage update in one commit. Excalidraw.com → File → Open, or drag the file onto the canvas.
 
 ## Interview questions
 
-**Q: Chat panel mein do alag state containers kyun hain — Query cache aur React state?**
-A: Query settled conversation ke liye hai, panel close/reopen survive karni hoti hai. In-flight stream Query mein nahi kyunki uska `notifyManager` notifications batch karta hai — har token cache mein likhne pe 7-chunk reply sirf 2 paints mein coalesce ho gayi thi (`use-chat.ts:304-312`). Isliye stream plain `useState` mein, jo turant re-render karta hai.
+**Q: Why are there two separate state containers in the chat panel — the Query cache and React state?**
+A: Query is for the settled conversation, which has to survive the panel closing and reopening. The in-flight stream isn't in Query because its `notifyManager` batches notifications — writing every token into the cache coalesced a 7-chunk reply into just 2 paints (`use-chat.ts:304-312`). So the stream lives in plain `useState`, which re-renders immediately.
 
-**Q: `MAX_TOOL_ROUNDS = 5` kya hai aur kyun zaroori hai?**
-A: Model aur page ke tools ke beech ek turn mein kitni baar "bounce" ho sakta hai uski cap, server ke apne step limit ko mirror karti hai. Bina cap ke, ek tool jiska result model ko usi tool ko phir call karne pe uksaaye, infinite loop ban sakta hai.
+**Q: What is `MAX_TOOL_ROUNDS = 5` and why is it needed?**
+A: It caps how many times a single turn can "bounce" between the model and the page's tools, mirroring the server's own step limit. Without a cap, a tool whose result nudges the model to call the same tool again could loop forever.
 
-**Q: Client tool call turn ko "pause" kyun karta hai, cancel kyun nahi?**
-A: Client tool sirf browser hi chala sakta hai. Stream end hoti hai, `runTool()` browser mein chalta hai, result agle round ke `outbound` messages mein append hota hai — yeh dangling tool call se bachata hai, jise provider next request pe reject kar deta.
+**Q: Why does a client tool call "pause" the turn instead of cancelling it?**
+A: Only the browser can run a client tool. The stream ends, `runTool()` runs in the browser, and the result is appended to the next round's `outbound` messages — which avoids a dangling tool call, something the provider would reject on the next request.
 
-**Q: Widgets aur sources reply poora hone se pehle kyun dikhaye jaate hain?**
-A: Retrieval closing sentence se bahut pehle finish ho jaata hai; content rok ke rakhna matlab ready cheez pe spinner dikhana. `setStreamingWidgets`/`setStreamingSources` stream ke beech hi call hote hain (`use-chat.ts:97-110`).
+**Q: Why are widgets and sources shown before the reply is complete?**
+A: Retrieval finishes long before the closing sentence; holding the content back means showing a spinner over something that's already ready. `setStreamingWidgets`/`setStreamingSources` are called mid-stream (`use-chat.ts:97-110`).
 
-**Q: Persistence (`saveChat`) per-token kyun nahi hota?**
-A: `write()` hi ek funnel hai jispe har settled change guzarta hai, aur turn settle hone pe ek baar call hota hai. Per-token save karne se bahut zyada localStorage writes hote, aur half-finished reply restore karna galat bhi hai.
+**Q: Why isn't persistence (`saveChat`) done per token?**
+A: `write()` is the single funnel every settled change passes through, and it's called once when the turn settles. Saving per token would mean far too many localStorage writes, and restoring a half-finished reply would be wrong anyway.
 
-**Q: `settledIds` module-level `Set` hai, component state nahi — kyun?**
-A: Settling do writes hai — marker aur Query cache — jinka koi shared schedule nahi. Cache-write pehle jeet jaaye toh finished reply "slide up" jaisi dikhti thi. Plain `Set` synchronously update hoti hai, jo render pehle aaye already-updated marker dekhta hai (`use-chat.ts:217-232`).
+**Q: Why is `settledIds` a module-level `Set` rather than component state?**
+A: Settling is two writes — the marker and the Query cache — with no shared schedule. When the cache write won the race, the finished reply visibly "slid up". A plain `Set` updates synchronously, so whichever render comes first already sees the updated marker (`use-chat.ts:217-232`).
 
-**Q: `localStorage` quota exceed ho jaaye toh chat crash hoti hai kya?**
-A: Nahi. `saveChat()` progressively shorter tails try karta hai — `[full, 20, 10, 4, 1]` messages. Kuch fit na ho toh apna key `removeItem` kar deta hai; chat memory mein kaam karti rehti hai, sirf reload pe persist nahi hoti (`store.ts:108-126`).
+**Q: Does the chat crash if `localStorage` quota is exceeded?**
+A: No. `saveChat()` retries with progressively shorter tails — `[full, 20, 10, 4, 1]` messages. If nothing fits, it does a `removeItem` on its own key; the chat keeps working in memory, it just doesn't persist across a reload (`store.ts:108-126`).
 
-**Q: `retry()` poori conversation resend karta hai kya?**
-A: Nahi. Last user message dhoondhta hai, cache ko us message tak trim kar deta hai (partial reply drop), `mutation.reset()` karta hai, phir usi text se `mutation.mutate()` karta hai — turn fresh chalta hai (`use-chat.ts:774-782`).
+**Q: Does `retry()` resend the whole conversation?**
+A: No. It finds the last user message, trims the cache up to that message (dropping the partial reply), calls `mutation.reset()`, and then `mutation.mutate()` with the same text — the turn runs fresh (`use-chat.ts:774-782`).
 
-**Q: Naya event kind (jaise `"reasoning"`) add karna ho toh kahan change hoga?**
-A: `StreamEvent` union mein `packages/api/src/schema.ts`, `use-chat.ts` ke `for await` loop mein naya branch (apna `useState`, Query cache mein nahi), aur `ChatState` type mein expose taaki `panel.tsx` render kar sake.
+**Q: To add a new event kind (say `"reasoning"`), where would the changes go?**
+A: The `StreamEvent` union in `packages/api/src/schema.ts`, a new branch in `use-chat.ts`'s `for await` loop (with its own `useState`, not in the Query cache), and an expose in the `ChatState` type so `panel.tsx` can render it.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- Sochte hain streaming bhi Query cache mein hoti hai — sirf *settled* messages Query mein hain, in-flight tokens hamesha plain `useState` mein.
-- `MAX_TOOL_ROUNDS` ko "max tool calls per turn" samajh lete hain — actually rounds hain; ek round mein multiple `outstanding` client tools ek saath chal sakte hain.
-- `saveChat()` "har message pe call hoti hai" nahi — sirf turn settle hone pe, ek baar, `write()` ke through.
-- Widget/source "streaming" dikhna final reply render se confuse karta hai — do alag paths hain: in-flight ke liye `streamingWidgets`/`streamingText`, settled ke liye message ke `parts`/`sources` (`panel.tsx`).
+- People assume streaming also lives in the Query cache — only *settled* messages are in Query; in-flight tokens are always in plain `useState`.
+- `MAX_TOOL_ROUNDS` gets read as "max tool calls per turn" — they're actually rounds; multiple `outstanding` client tools can run together within one round.
+- `saveChat()` is not "called on every message" — only once, when the turn settles, through `write()`.
+- Seeing widgets/sources "stream" gets confused with the final reply render — these are two separate paths: `streamingWidgets`/`streamingText` for in-flight, and the message's `parts`/`sources` for settled (`panel.tsx`).

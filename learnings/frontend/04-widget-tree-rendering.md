@@ -1,13 +1,13 @@
 # Widget Tree Rendering
-_AI ke jawaab mein interactive card kaise render hota hai — bina kabhi koi code chalaye._
+_How an interactive card renders inside an AI reply — without ever executing any code._
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-Jab Freddy (yeh product ka AI) ko text se better ek card dikhana ho — weather card, hotel options ki carousel, ek lead-capture form — toh backend ek chhota JSON tree bhejta hai jo bataata hai "kaunsa layout, kaunsa data". `packages/widgets` package uss JSON ko actual React UI mein badalta hai. Poora system teen files mein hai: `tree.ts` (format define karta hai), `resolve.ts` (path lookup), `render.tsx` (recursive walker jo React tree banaata hai).
+When Freddy (the product's AI) needs to show something better than text — a weather card, a carousel of hotel options, a lead-capture form — the backend sends a small JSON tree describing "which layout, which data". The `packages/widgets` package turns that JSON into real React UI. The whole system lives in three files: `tree.ts` (defines the format), `resolve.ts` (path lookup), and `render.tsx` (the recursive walker that builds the React tree).
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Widget ka data ultimately AI model ke tool-call output ya knowledge-base content se aata hai — **untrusted input**. Agar hum yeh data ek templating engine ko dete jo JS expressions evaluate kar sakti hai, toh model output (ya KB mein chhupa hua text) theoretically arbitrary code chala sakta tha customer ki site pe. `tree.ts` ke top comment mein yeh saaf likha hai:
+Widget data ultimately comes from an AI model's tool-call output or from knowledge-base content — **untrusted input**. If we handed that data to a templating engine that could evaluate JS expressions, model output (or text hidden in the KB) could theoretically run arbitrary code on the customer's site. The comment at the top of `tree.ts` says this plainly:
 
 ```ts
 // tree.ts:6-9
@@ -17,87 +17,87 @@ Widget ka data ultimately AI model ke tool-call output ya knowledge-base content
 // a customer's page.
 ```
 
-Author dashboard mein JSX likhta hai, but runtime tak sirf plain JSON pahunchta hai — koi `eval`, koi expression parser nahi. `resolve.ts:11-13` mein bhi same baat: "there is no expression parser and nothing is evaluated — `resolve` walks an object with string keys."
+The author writes JSX in the dashboard, but only plain JSON ever reaches the runtime — no `eval`, no expression parser. `resolve.ts:11-13` says the same thing: "there is no expression parser and nothing is evaluated — `resolve` walks an object with string keys."
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **Definition registered hoti hai.** Har widget ek `WidgetDefinition` hai — id, Zod schema, aur `states` (named JSON trees). `registry.ts` mein per-customer register hoti hai, kyunki purane conversation messages ko unke original version ke against hi render hona chahiye.
+1. **A definition is registered.** Each widget is a `WidgetDefinition` — an id, a Zod schema, and `states` (named JSON trees). They're registered per customer in `registry.ts`, because old conversation messages have to render against their original version.
 
-2. **Tool call se widget data aata hai.** AI jab tool call karta hai, response `WidgetPayloadSchema` (`tree.ts:245-252`) shape mein aata hai — `widgetId`, `version`, `data`, aur text `summary` (fallback).
+2. **Widget data arrives from a tool call.** When the AI calls a tool, the response comes in the `WidgetPayloadSchema` shape (`tree.ts:245-252`) — `widgetId`, `version`, `data`, and a text `summary` (the fallback).
 
-3. **`Widget` component state chunta hai.** `render.tsx:164-276` definition ke `states` map se ek state pick karta hai — `stateBy` diya ho toh data ke ek field se decide hota hai (jaise booking widget "form" vs "confirmed"). State data se derive hoti hai, isliye conversation reopen karne pe wahi visual state deterministically wapas aati hai.
+3. **The `Widget` component picks a state.** `render.tsx:164-276` picks one state out of the definition's `states` map — if `stateBy` is given, a field of the data decides it (say, the booking widget's "form" vs "confirmed"). The state is derived from the data, so reopening the conversation deterministically brings back the same visual state.
 
-4. **`RenderNode` tree recursively walk karta hai.** Pehle `when` check hota hai — false hone pe node aur uske children resolve/mount hi nahi hote (`render.tsx:79`). Fir `repeat` ho toh `expandRepeat` array ko N sibling elements mein expand karta hai, har ek apne `$item`/`$index` scope ke saath (`render.tsx:46-74`).
+4. **`RenderNode` walks the tree recursively.** `when` is checked first — if it's false, neither the node nor its children are ever resolved or mounted (`render.tsx:79`). Then, if there's a `repeat`, `expandRepeat` expands the array into N sibling elements, each with its own `$item`/`$index` scope (`render.tsx:46-74`).
 
-5. **Props resolve hote hain.** `resolveProps` (`resolve.ts:211-221`) literal values ko as-is chhodta hai, `{$bind: "$.path"}` objects ko `resolvePath` se walk karke value nikaalta hai, fir optional `fallback` aur `format` (money/date/number/...) apply karta hai.
+5. **Props are resolved.** `resolveProps` (`resolve.ts:211-221`) leaves literal values as-is, walks `{$bind: "$.path"}` objects through `resolvePath` to pull out the value, and then applies the optional `fallback` and `format` (money/date/number/...).
 
-6. **Fixed primitive component ko handoff.** Node ka `type` (Box, Card, Title, Button...) `PRIMITIVES` registry (`primitives/index.ts:34-59`) se ek real React component nikaalta hai. `type` unknown ho (purana version, bug) toh sirf console warning ke saath `null` return hota hai — poora widget crash nahi hota (`render.tsx:82-87`).
+6. **Handoff to a fixed primitive component.** The node's `type` (Box, Card, Title, Button...) looks up a real React component in the `PRIMITIVES` registry (`primitives/index.ts:34-59`). If the `type` is unknown (an old version, a bug), it returns `null` with just a console warning — the whole widget doesn't crash (`render.tsx:82-87`).
 
-7. Result: ek deterministic React tree, jisme har step sirf lookup/switch hai — kahin bhi arbitrary code execute nahi hota.
+7. The result: a deterministic React tree, where every step is a lookup or a switch — no arbitrary code executes anywhere.
 
 ## Code walkthrough
 
-- **`tree.ts:155-186`** — `NODE_TYPES` ek fixed array hai (Box, Row, Card, Title, Button, Form, Carousel, Chart...). Yeh closed set hi safety story ka core hai: "an author cannot introduce a new primitive" (`tree.ts:152-154`).
+- **`tree.ts:155-186`** — `NODE_TYPES` is a fixed array (Box, Row, Card, Title, Button, Form, Carousel, Chart...). That closed set is the core of the safety story: "an author cannot introduce a new primitive" (`tree.ts:152-154`).
 
-- **`tree.ts:27-35`** — `isSafeUrl`: control characters pehle strip karke check hota hai, tabhi scheme ko allowlist (`http:`, `https:`, `mailto:`, `tel:`) se match karta hai — browser tabs/newlines URL se apne aap strip kar deta hai, isliye `"jav\tascript:"` ek naive check ko bypass kar sakta tha:
+- **`tree.ts:27-35`** — `isSafeUrl`: control characters are stripped first, and only then is the scheme matched against an allowlist (`http:`, `https:`, `mailto:`, `tel:`) — browsers strip tabs/newlines out of URLs on their own, so `"jav\tascript:"` could bypass a naive check:
 ```ts
 const scheme = /^[a-z][a-z0-9+.-]*:/i.exec(url)
 if (!scheme) return true // relative: /path, ./x, #hash, ?q
 return SAFE_URL_SCHEMES.has(scheme[0].toLowerCase())
 ```
 
-- **`resolve.ts:64-73`** — `resolvePath` prototype-pollution-unsafe keys explicitly reject karta hai, kyunki data model-authored JSON hai:
+- **`resolve.ts:64-73`** — `resolvePath` explicitly rejects prototype-pollution-unsafe keys, because the data is model-authored JSON:
 ```ts
 if (key === "__proto__" || key === "constructor" || key === "prototype") {
   return undefined
 }
 ```
 
-- **`render.tsx:46-73`** — `expandRepeat` array ko sibling elements mein expand karta hai (ek fragment mein nahi), kyunki `Carousel` jaisa primitive apne children ko individually slot karta hai — pehle iska galat implementation vertical-stack bug de chuka tha.
+- **`render.tsx:46-73`** — `expandRepeat` expands the array into sibling elements (not into one fragment), because a primitive like `Carousel` slots its children individually — an earlier, wrong implementation of this caused a vertical-stack bug.
 
-- **`stock/weather.ts:81-94`** — real example: `Card` ke andar ek `Box` jiska background literal `"#2563eb"` hai (theme-independent, kyunki card identity hai), `city`/`temperature` bound values hain.
+- **`stock/weather.ts:81-94`** — a real example: a `Box` inside a `Card` with a literal `"#2563eb"` background (theme-independent, because it's the card's identity), with `city`/`temperature` as bound values.
 
 ## Diagram
 
-Neel diagram (`04-widget-tree-rendering.excalidraw`) mein dikhaya gaya hai ki data ek untrusted source se safe rendered UI tak kaise pahunchta hai (excalidraw.com pe File → Open, ya drag). Flow left-to-right hai:
+The diagram (`04-widget-tree-rendering.excalidraw`) shows how data travels from an untrusted source to safely rendered UI (on excalidraw.com use File → Open, or drag it in). The flow runs left to right:
 
-1. **"LLM / Knowledge base (untrusted)"** box — tool-call data originate yahin se.
-2. Arrow → **"Widget data (JSON tree)"** box — `WidgetPayloadSchema` shape.
-3. Arrow → **"RenderNode walker"** box (`render.tsx`), central engine.
-4. Isse teen branch boxes: **"when? → skip node"**, **"repeat? → expand N siblings"**, **"resolve $bind props (path lookup only)"** — teeno hi decisions hain, expression evaluate nahi karte.
-5. Sab branches → **"Fixed set of React primitives"** box (`PRIMITIVES` registry).
-6. Aakhri box: **"Rendered card in chat UI"**.
-7. Ek chhota red caption "no eval() anywhere" neeche — yeh reinforce karta hai ki har step lookup/switch hai, interpreter nahi.
+1. An **"LLM / Knowledge base (untrusted)"** box — where the tool-call data originates.
+2. Arrow → a **"Widget data (JSON tree)"** box — the `WidgetPayloadSchema` shape.
+3. Arrow → the **"RenderNode walker"** box (`render.tsx`), the central engine.
+4. Three branch boxes come off it: **"when? → skip node"**, **"repeat? → expand N siblings"**, and **"resolve $bind props (path lookup only)"** — all three are decisions, none evaluates an expression.
+5. All branches → the **"Fixed set of React primitives"** box (the `PRIMITIVES` registry).
+6. The final box: **"Rendered card in chat UI"**.
+7. A small red caption at the bottom, "no eval() anywhere" — reinforcing that every step is a lookup or a switch, never an interpreter.
 
 ## Interview questions
 
-**Q: Widget data untrusted kyun hai, aur is system ka core safety guarantee kya hai?**
-A: Data ultimately AI tool-call output ya knowledge-base content se aata hai — dono Freddy ke apne deterministic control mein nahi hain. Core guarantee: render pipeline mein kahin bhi expression evaluator nahi hai — renderer ek closed `NODE_TYPES` list se pick karta hai aur `$bind` paths ko sirf walk karta hai, kabhi string ko code ki tarah execute nahi karta (`tree.ts:7-9`).
+**Q: Why is widget data untrusted, and what is this system's core safety guarantee?**
+A: The data ultimately comes from AI tool-call output or knowledge-base content — neither of which is under Freddy's own deterministic control. The core guarantee: there is no expression evaluator anywhere in the render pipeline — the renderer picks from a closed `NODE_TYPES` list and only walks `$bind` paths, never executing a string as code (`tree.ts:7-9`).
 
-**Q: `{$bind: "$.path"}` aur ek JS template string mein fundamental difference kya hai?**
-A: Template string ek expression evaluate karta hai — arithmetic, function calls, kuch bhi ho sakta hai. `$bind` sirf ek dot/bracket path hai jise `resolvePath` (`resolve.ts:47-74`) plain object traversal se walk karta hai — koi parser nahi, sirf `.split(".")` aur key lookup. Computation ki gunjaish hi nahi hai.
+**Q: What's the fundamental difference between `{$bind: "$.path"}` and a JS template string?**
+A: A template string evaluates an expression — arithmetic, function calls, anything. `$bind` is only a dot/bracket path, which `resolvePath` (`resolve.ts:47-74`) walks by plain object traversal — no parser, just `.split(".")` and key lookups. There's no room for computation at all.
 
-**Q: Prototype pollution attack widget data se kaise ho sakta tha, aur code isse kaise rokta hai?**
-A: Agar model `"$.__proto__.polluted"` jaisa path bhej de aur lookup blindly `base[key]` kare, toh `Object.prototype` tak pahunch sakta tha. `resolve.ts:65-67` explicitly `__proto__`, `constructor`, `prototype` segments ko reject kar deta hai — yeh check har path lookup ke andar hai, bypass nahi ho sakta.
+**Q: How could a prototype pollution attack have come through widget data, and how does the code prevent it?**
+A: If the model sent a path like `"$.__proto__.polluted"` and the lookup blindly did `base[key]`, it could reach `Object.prototype`. `resolve.ts:65-67` explicitly rejects `__proto__`, `constructor`, and `prototype` segments — and that check lives inside every path lookup, so it can't be bypassed.
 
-**Q: `when` false hone pe children mount kyun nahi hote, aur yeh kyun matter karta hai?**
-A: `RenderNode` (`render.tsx:79`) sabse pehle `when` check karta hai — false pe turant `null` return, props resolve ya children recurse kabhi hota hi nahi. Isse malformed ya missing-data child kabhi render attempt bhi nahi karta jab tak parent visible na ho.
+**Q: Why don't children mount when `when` is false, and why does that matter?**
+A: `RenderNode` (`render.tsx:79`) checks `when` first — on false it returns `null` immediately, and props are never resolved and children never recursed. So a malformed or missing-data child never even attempts to render unless its parent is visible.
 
-**Q: `repeat` ko separate function mein kyun implement kiya, single fragment return kyun nahi kiya?**
-A: Comment (`render.tsx:120-133`) explain karta hai — agar repeat ek `<>{...}</>` fragment return kare, toh `Carousel` jaisa parent jo children ko individually slot karta hai usko sirf "ek child" dikhta hai, aur poora fragment ek slot mein chala jaata hai (vertical stack bug). `expandRepeat` isliye `ReactElement[]` return karta hai jo parent ke flat children array mein merge ho jaata hai.
+**Q: Why is `repeat` implemented as a separate function instead of returning a single fragment?**
+A: The comment (`render.tsx:120-133`) explains it — if repeat returned a `<>{...}</>` fragment, a parent like `Carousel` that slots children individually would see only "one child" and the whole fragment would land in a single slot (the vertical-stack bug). So `expandRepeat` returns a `ReactElement[]` that merges into the parent's flat children array.
 
-**Q: Version mismatch ho (purani definition, naya data shape) toh crash hoga?**
-A: Nahi, system deliberately degrade karta hai. `getWidget` (`registry.ts:48-62`) exact version na milne pe latest fallback karta hai. Unknown node type ho toh sirf warning ke saath `null` (`render.tsx:82-87`). Missing field pe `resolvePath` `undefined` return karta hai jo silently empty render hota hai — "an unresolved binding renders as empty rather than as an error" (`registry.ts:44-46`).
+**Q: Does a version mismatch (old definition, new data shape) crash things?**
+A: No, the system degrades deliberately. `getWidget` (`registry.ts:48-62`) falls back to the latest when the exact version isn't found. An unknown node type yields `null` with just a warning (`render.tsx:82-87`). A missing field makes `resolvePath` return `undefined`, which renders silently empty — "an unresolved binding renders as empty rather than as an error" (`registry.ts:44-46`).
 
-**Q: `stateBy` widget ko "reconstructible" kaise banaata hai?**
-A: `stateBy` data ke ek field ki value ko `map` mein lookup karke batata hai kaunsa named `states` entry render hoga (`render.tsx:250-257`). State local React state se nahi, data se derive hoti hai — isliye conversation reopen karne pe stored `data` replay hoke exactly wahi state deterministically wapas aati hai, jaise booking "confirmed" state permanently stick karta hai `onDataChange` ke baad (`render.tsx:200-208`).
+**Q: How does `stateBy` make a widget "reconstructible"?**
+A: `stateBy` looks up the value of one data field in a `map` to decide which named `states` entry renders (`render.tsx:250-257`). The state is derived from the data, not from local React state — so reopening the conversation replays the stored `data` and deterministically restores exactly the same state, the way a booking permanently sticks in its "confirmed" state after `onDataChange` (`render.tsx:200-208`).
 
-**Q: Naya widget primitive add karna ho, toh kya-kya touch karna padega?**
-A: Teen jagah: `tree.ts` ke `NODE_TYPES` mein naya string, ek React component `primitives/` mein, aur `primitives/index.ts` ke `PRIMITIVES` record mein map. `PRIMITIVES` ka type `Record<NodeType, ComponentType<...>>` hai — agar renderer add karna bhool jao, TypeScript compile hi fail ho jaayega, blank widget silently nahi milega.
+**Q: To add a new widget primitive, what would you have to touch?**
+A: Three places: a new string in `tree.ts`'s `NODE_TYPES`, a React component in `primitives/`, and a mapping in `primitives/index.ts`'s `PRIMITIVES` record. `PRIMITIVES` is typed as `Record<NodeType, ComponentType<...>>` — so if you forget to add the renderer, the TypeScript compile fails rather than silently giving you a blank widget.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- `$bind` ko log mini-templating-language samajh lete hain jisme filters chain kar sakte ho — actual mein yeh sirf ek path hai, computation zero.
-- `when` ko full JS boolean expression samajh lete hain — actual mein sirf ek path ke against `is`/`oneOf`/truthiness test hai (`tree.ts:83-96`), do paths compare nahi kar sakte.
-- `repeat` ko `.map()` jaisa treat karte hain jisme arbitrary transform ho sake — actual mein sirf array pe iterate karta hai, filtering/sorting logic data mein hi ready honi chahiye.
-- Naye log sochte hain Zod schema validation hi security handle karti hai — schema sirf shape check karta hai; XSS/injection protection specific checks se aata hai (`isSafeUrl`, prototype-key guard), generic validation se nahi.
+- People read `$bind` as a mini templating language where you can chain filters — it's actually just a path, with zero computation.
+- People read `when` as a full JS boolean expression — it's actually just an `is`/`oneOf`/truthiness test against one path (`tree.ts:83-96`); it can't compare two paths.
+- People treat `repeat` like `.map()` with an arbitrary transform — it only iterates an array; filtering/sorting logic has to be ready in the data itself.
+- Newcomers assume Zod schema validation handles the security — the schema only checks shape; XSS/injection protection comes from the specific checks (`isSafeUrl`, the prototype-key guard), not from generic validation.

@@ -1,301 +1,301 @@
 # Freddy AI — Interview Prep
-_Saare 10 topics ke interview questions ek jagah — grouped by topic, near-duplicates merged, taaki revise karte waqt scroll kam karna pade._
+_All the interview questions from the 10 topics in one place — grouped by topic, near-duplicates merged, so revising means less scrolling._
 
 ## Frontend
 
 ### Monorepo & Tooling ([full doc](frontend/01-monorepo-and-tooling.md))
 
-**Q: pnpm workspaces aur Turborepo mein kya difference hai?**
-A: pnpm workspaces sirf *dependency linking* karta hai — `pnpm-workspace.yaml` padh ke `workspace:*` deps ko symlink karta hai. Turborepo *task orchestration aur caching* karta hai — `turbo.json`'s `dependsOn: ["^build"]` order decide karta hai, `outputs` se result cache hota hai. Ek ke bina doosra bhi chalega, bas slower aur bina dependency-order guarantee ke.
+**Q: What's the difference between pnpm workspaces and Turborepo?**
+A: pnpm workspaces only handles *dependency linking* — it reads `pnpm-workspace.yaml` and symlinks `workspace:*` deps. Turborepo handles *task orchestration and caching* — `turbo.json`'s `dependsOn: ["^build"]` decides the order, and `outputs` caches the result. Either works without the other, just slower and with no dependency-order guarantee.
 
-**Q: `packages/api` ko "shared wire contract" kyun kaha jaata hai?**
-A: Yeh sirf types nahi, runtime validation bhi hai — Zod schemas backend mein incoming requests validate karte hain aur wahi schemas se derive TypeScript types dono apps compile-time pe use karte hain. Header comment khud kehta hai: field add karo to jo bhi half update karna bhool gaye wahan TypeScript break karega (`schema.ts:3-9`) — ek single source of truth, runtime + compile-time dono guarantees ke saath.
+**Q: Why is `packages/api` called the "shared wire contract"?**
+A: It isn't only types — it's runtime validation too. The Zod schemas validate incoming requests in the backend, and the TypeScript types derived from those same schemas are used by both apps at compile time. The header comment says it itself: add a field and TypeScript breaks whichever half you forgot to update (`schema.ts:3-9`) — one single source of truth, with both runtime and compile-time guarantees.
 
-**Q: `packages/ui` mein prop badalne par dashboard/chatbot ko turant pata chalega?**
-A: Haan, bina publish/version-bump ke — pnpm `@workspace/ui` ko dono apps ke `node_modules` mein seedha `packages/ui/src` pe symlink karta hai. `tsc -b` turant type error dega prop break hone par, aur Vite dev server hot-reload karega kyunki asli file hi import ho rahi hai.
+**Q: If a prop changes in `packages/ui`, do the dashboard and chatbot find out immediately?**
+A: Yes, with no publish or version bump — pnpm symlinks `@workspace/ui` in both apps' `node_modules` straight to `packages/ui/src`. `tsc -b` reports a type error immediately when a prop breaks, and the Vite dev server hot-reloads because it's importing the real file.
 
-**Q: `pnpm dlx shadcn add <component> -c apps/dashboard` chalane par component dashboard mein kyun nahi lands hota?**
-A: `-c apps/dashboard` sirf CLI ko Tailwind config/alias context batata hai; actual destination `packages/ui`'s `"exports"` field decide karta hai (`"./components/*": "./src/components/*.tsx"`) — CLI usi convention follow karta hai.
+**Q: Why doesn't the component land in the dashboard when you run `pnpm dlx shadcn add <component> -c apps/dashboard`?**
+A: `-c apps/dashboard` only tells the CLI which Tailwind config/alias context to use; the actual destination is decided by `packages/ui`'s `"exports"` field (`"./components/*": "./src/components/*.tsx"`) — the CLI follows that convention.
 
-**Q: `turbo dev`'s `"cache": false, "persistent": true` kyun hai jabki `build` cache hoti hai?**
-A: `dev` ek never-exiting process hai (Vite dev server, `tsx watch`) jiska output deterministic nahi — cache karna galat hoga. `persistent: true` batata hai yeh background mein chalte rehna chahiye. `build` opposite hai — deterministic `dist/**` output jo safely cache/reuse ho sakta hai.
+**Q: Why is `turbo dev` set to `"cache": false, "persistent": true` when `build` is cached?**
+A: `dev` is a never-exiting process (Vite dev server, `tsx watch`) whose output isn't deterministic — caching it would be wrong. `persistent: true` says it should keep running in the background. `build` is the opposite — deterministic `dist/**` output that can safely be cached and reused.
 
-**Q: Render pe backend deploy karte waqt `rootDir` kyun nahi set kiya?**
-A: `packages/backend`'s `workspace:*` deps (`@workspace/api`, `@workspace/rag`) sirf tab resolve hote hain jab poore workspace root se install ho (symlinks banane ke liye). `rootDir` set karte to install isolated chalta aur deps miss ho jaate. `buildCommand` root se install karta hai, `startCommand` `pnpm --filter @workspace/backend start` se specifically backend start karta hai.
+**Q: Why isn't `rootDir` set when deploying the backend on Render?**
+A: `packages/backend`'s `workspace:*` deps (`@workspace/api`, `@workspace/rag`) only resolve when the install runs from the full workspace root (so the symlinks get created). Setting `rootDir` would install it in isolation and the deps would be missing. The `buildCommand` installs from the root, and the `startCommand` starts the backend specifically with `pnpm --filter @workspace/backend start`.
 
-**Q: Agar `packages/widgets` ko `packages/backend` import karna pade, kya woh architecture break hogi?**
-A: Haan — `packages/widgets`'s deps mein sirf `@workspace/ui`, `react`, `zod` hain, backend nahi. Yeh isko "pure render-a-tree logic" rakhta hai, jahan bhi React chale reusable. Backend import karne se yeh guarantee toot jaayegi aur server-only code (jaise `better-sqlite3`) browser bundle mein khinch sakta hai.
+**Q: If `packages/backend` had to import `packages/widgets`, would that break the architecture?**
+A: Yes — `packages/widgets`'s deps are only `@workspace/ui`, `react`, and `zod`, not the backend. That keeps it "pure render-a-tree logic", reusable anywhere React runs. Importing the backend would break that guarantee and could pull server-only code (like `better-sqlite3`) into the browser bundle.
 
-**Q: Naya `packages/analytics` (sirf backend use karega) add karna ho, kya-kya touch karna padega?**
-A: `pnpm-workspace.yaml` change nahi karna (already `packages/*` match karta hai) — `package.json` bana ke `name: "@workspace/analytics"` set karo, `packages/backend/package.json` mein `"@workspace/analytics": "workspace:*"` add karo, phir `pnpm install` chalao symlink banane ke liye. `turbo.json` touch nahi karna kyunki task-graph automatically deps se derive hota hai.
+**Q: To add a new `packages/analytics` (used only by the backend), what would you have to touch?**
+A: Not `pnpm-workspace.yaml` (it already matches `packages/*`) — create a `package.json` with `name: "@workspace/analytics"`, add `"@workspace/analytics": "workspace:*"` to `packages/backend/package.json`, then run `pnpm install` to create the symlink. You don't touch `turbo.json`, because the task graph is derived automatically from the deps.
 
 ### Chatbot Widget Embedding ([full doc](frontend/02-chatbot-widget-embedding.md))
 
-**Q: `<freddy-chat>` kaam kaise karta hai bina kisi framework ke host page pe?**
-A: Yeh ek native Web Component hai — `customElements.define("freddy-chat", ChatWidgetElement)` browser ko sikhaata hai ki is tag ka matlab kya hai. Browser khud `connectedCallback()` call karta hai, koi framework runtime host page pe chahiye hi nahi.
+**Q: How does `<freddy-chat>` work on the host page with no framework?**
+A: It's a native Web Component — `customElements.define("freddy-chat", ChatWidgetElement)` teaches the browser what the tag means. The browser calls `connectedCallback()` itself; no framework runtime is needed on the host page at all.
 
-**Q: Shadow DOM kya hai aur yahan kyun use kiya gaya?**
-A: Ek private mini-DOM tree jo element ke saath attach hoti hai, apna alag style scope rakhti hai. Do direction mein isolation chahiye thi: host ka CSS widget na todhe, widget ka CSS host na todhe. `host.attachShadow({ mode: "closed" })` yeh dono deta hai.
+**Q: What is Shadow DOM, and why is it used here?**
+A: A private mini-DOM tree attached to an element, with its own style scope. Isolation was needed in both directions: the host's CSS must not break the widget, and the widget's CSS must not break the host. `host.attachShadow({ mode: "closed" })` gives both.
 
-**Q: "closed" vs "open" shadow root — yahan closed kyun?**
-A: Open mode mein host page ka JS `element.shadowRoot` se andar mutate kar sakta hai. Closed mode mein wo property `null` return karti hai — "so host-page scripts cannot reach in via `.shadowRoot` and mutate our DOM."
+**Q: "closed" vs "open" shadow root — why closed here?**
+A: In open mode the host page's JS can reach in and mutate through `element.shadowRoot`. In closed mode that property returns `null` — "so host-page scripts cannot reach in via `.shadowRoot` and mutate our DOM."
 
-**Q: Base UI popups yahan kahan jaate hain by default, aur widget mein kaise handle hua?**
-A: Default `document.body` mein — shadow boundary ke bahar, so unstyled render hota. Fix: `mount()` shadow root ke andar ek `fixed`, high-`z-index` div banata hai aur `ShadowContext` se poore tree ko provide karta hai, taaki popups wahan portal karein.
+**Q: Where do Base UI popups go by default, and how does the widget handle that?**
+A: Into `document.body` by default — outside the shadow boundary, so they'd render unstyled. The fix: `mount()` creates a `fixed`, high-`z-index` div inside the shadow root and provides it to the whole tree through `ShadowContext`, so popups portal there.
 
-**Q: React container `display: contents` kyun, aur portal layer alag div kyun?**
-A: `display: contents` apna stacking context nahi banata — bare container mein portal ho toh stack karne ke liye kuch nahi, host page ke peeche paint ho jaata. Portal layer isliye `position: fixed` + explicit `z-index` ke saath alag hai.
+**Q: Why is the React container `display: contents`, and why is the portal layer a separate div?**
+A: `display: contents` creates no stacking context of its own — a portal in the bare container would have nothing to stack against and would paint behind the host page. That's why the portal layer is separate, with `position: fixed` and an explicit `z-index`.
 
-**Q: Theme change aur mode change mein alag behavior kyun hai?**
-A: Theme sirf ek `data-theme` flag hai, in-place update ho sakta hai. `mode`/`position`/`trigger` tree shape hi badal dete hain, aur shadow root ek baar attach hone ke baad kisi naye host pe move nahi ho sakta — isliye purana element replace karna hi ek tareeka hai.
+**Q: Why do theme changes and mode changes behave differently?**
+A: Theme is just a `data-theme` flag and can be updated in place. `mode`/`position`/`trigger` change the shape of the tree, and once a shadow root is attached it can't be moved to a new host — so replacing the old element is the only way.
 
-**Q: `adoptedStyleSheets` kyun, Vite default `<style>` injection kyun nahi?**
-A: Vite normally CSS `<head>` mein `<style>` tag se daalta hai, jo shadow root ke andar visible nahi hota. `?inline` import se raw CSS string leke `CSSStyleSheet` banaya jaata hai aur `adoptedStyleSheets` pe assign hota hai — ek parsed sheet sab instances mein share hoti hai.
+**Q: Why `adoptedStyleSheets` instead of Vite's default `<style>` injection?**
+A: Vite normally injects CSS into `<head>` as a `<style>` tag, which isn't visible inside the shadow root. So the raw CSS string is taken from an `?inline` import, turned into a `CSSStyleSheet`, and assigned to `adoptedStyleSheets` — one parsed sheet shared across all instances.
 
-**Q: Yeh design kaise galat use ho sakta hai (breaking change)?**
-A: Sabse common: koi `attachShadow({ mode: "open" })` kar de "debugging aasaan" bolke — isolation todhta hai. Doosra: naya popup component `usePortalContainer()` use na kare — silently `document.body` mein unstyled render hoga, TypeScript nahi pakdega. Teesra: inline mode mein host ki height missing ho — `100dvh` fallback logic hata do toh panel infinitely grow karega.
+**Q: How could this design be misused (a breaking change)?**
+A: The most common one: someone switches to `attachShadow({ mode: "open" })` because "it's easier to debug" — that breaks the isolation. Second: a new popup component doesn't use `usePortalContainer()` — it'll silently render unstyled in `document.body`, and TypeScript won't catch it. Third: a missing host height in inline mode — remove the `100dvh` fallback logic and the panel grows indefinitely.
 
 ### Chat State & Streaming ([full doc](frontend/03-chat-state-and-streaming.md))
 
-**Q: Chat panel mein do alag state containers kyun hain — Query cache aur React state?**
-A: Query settled conversation ke liye hai, panel close/reopen survive karni hoti hai. In-flight stream Query mein nahi kyunki uska `notifyManager` notifications batch karta hai — har token cache mein likhne pe 7-chunk reply sirf 2 paints mein coalesce ho gayi thi. Isliye stream plain `useState` mein, jo turant re-render karta hai.
+**Q: Why are there two separate state containers in the chat panel — the Query cache and React state?**
+A: Query is for the settled conversation, which has to survive the panel closing and reopening. The in-flight stream isn't in Query because its `notifyManager` batches notifications — writing every token into the cache coalesced a 7-chunk reply into just 2 paints. So the stream lives in plain `useState`, which re-renders immediately.
 
-**Q: `MAX_TOOL_ROUNDS = 5` kya hai aur kyun zaroori hai?**
-A: Model aur page ke tools ke beech ek turn mein kitni baar "bounce" ho sakta hai uski cap, server ke apne step limit ko mirror karti hai. Bina cap ke, ek tool jiska result model ko usi tool ko phir call karne pe uksaaye, infinite loop ban sakta hai.
+**Q: What is `MAX_TOOL_ROUNDS = 5` and why is it needed?**
+A: It caps how many times a single turn can "bounce" between the model and the page's tools, mirroring the server's own step limit. Without a cap, a tool whose result nudges the model to call the same tool again could loop forever.
 
-**Q: Client tool call turn ko "pause" kyun karta hai, cancel kyun nahi?**
-A: Client tool sirf browser hi chala sakta hai. Stream end hoti hai, `runTool()` browser mein chalta hai, result agle round ke `outbound` messages mein append hota hai — yeh dangling tool call se bachata hai, jise provider next request pe reject kar deta.
+**Q: Why does a client tool call "pause" the turn instead of cancelling it?**
+A: Only the browser can run a client tool. The stream ends, `runTool()` runs in the browser, and the result is appended to the next round's `outbound` messages — which avoids a dangling tool call, something the provider would reject on the next request.
 
-**Q: Widgets aur sources reply poora hone se pehle kyun dikhaye jaate hain?**
-A: Retrieval closing sentence se bahut pehle finish ho jaata hai; content rok ke rakhna matlab ready cheez pe spinner dikhana. `setStreamingWidgets`/`setStreamingSources` stream ke beech hi call hote hain.
+**Q: Why are widgets and sources shown before the reply is complete?**
+A: Retrieval finishes long before the closing sentence; holding the content back means showing a spinner over something that's already ready. `setStreamingWidgets`/`setStreamingSources` are called mid-stream.
 
-**Q: Persistence (`saveChat`) per-token kyun nahi hota?**
-A: `write()` hi ek funnel hai jispe har settled change guzarta hai, aur turn settle hone pe ek baar call hota hai. Per-token save karne se bahut zyada localStorage writes hote, aur half-finished reply restore karna galat bhi hai.
+**Q: Why isn't persistence (`saveChat`) done per token?**
+A: `write()` is the single funnel every settled change passes through, and it's called once when the turn settles. Saving per token would mean far too many localStorage writes, and restoring a half-finished reply would be wrong anyway.
 
-**Q: `settledIds` module-level `Set` hai, component state nahi — kyun?**
-A: Settling do writes hai — marker aur Query cache — jinka koi shared schedule nahi. Cache-write pehle jeet jaaye toh finished reply "slide up" jaisi dikhti thi. Plain `Set` synchronously update hoti hai, jo render pehle aaye already-updated marker dekhta hai.
+**Q: Why is `settledIds` a module-level `Set` rather than component state?**
+A: Settling is two writes — the marker and the Query cache — with no shared schedule. When the cache write won the race, the finished reply visibly "slid up". A plain `Set` updates synchronously, so whichever render comes first already sees the updated marker.
 
-**Q: `localStorage` quota exceed ho jaaye toh chat crash hoti hai kya?**
-A: Nahi. `saveChat()` progressively shorter tails try karta hai — `[full, 20, 10, 4, 1]` messages. Kuch fit na ho toh apna key `removeItem` kar deta hai; chat memory mein kaam karti rehti hai, sirf reload pe persist nahi hoti.
+**Q: Does the chat crash if `localStorage` quota is exceeded?**
+A: No. `saveChat()` retries with progressively shorter tails — `[full, 20, 10, 4, 1]` messages. If nothing fits, it does a `removeItem` on its own key; the chat keeps working in memory, it just doesn't persist across a reload.
 
-**Q: `retry()` poori conversation resend karta hai kya?**
-A: Nahi. Last user message dhoondhta hai, cache ko us message tak trim kar deta hai (partial reply drop), `mutation.reset()` karta hai, phir usi text se `mutation.mutate()` karta hai — turn fresh chalta hai.
+**Q: Does `retry()` resend the whole conversation?**
+A: No. It finds the last user message, trims the cache up to that message (dropping the partial reply), calls `mutation.reset()`, and then `mutation.mutate()` with the same text — the turn runs fresh.
 
-**Q: Naya event kind (jaise `"reasoning"`) add karna ho toh kahan change hoga?**
-A: `StreamEvent` union mein `packages/api/src/schema.ts`, `use-chat.ts` ke `for await` loop mein naya branch (apna `useState`, Query cache mein nahi), aur `ChatState` type mein expose taaki `panel.tsx` render kar sake.
+**Q: To add a new event kind (say `"reasoning"`), where would the changes go?**
+A: The `StreamEvent` union in `packages/api/src/schema.ts`, a new branch in `use-chat.ts`'s `for await` loop (with its own `useState`, not in the Query cache), and an expose in the `ChatState` type so `panel.tsx` can render it.
 
 ### Widget Tree Rendering ([full doc](frontend/04-widget-tree-rendering.md))
 
-**Q: Widget data untrusted kyun hai, aur is system ka core safety guarantee kya hai?**
-A: Data ultimately AI tool-call output ya knowledge-base content se aata hai — dono Freddy ke apne deterministic control mein nahi hain. Core guarantee: render pipeline mein kahin bhi expression evaluator nahi hai — renderer ek closed `NODE_TYPES` list se pick karta hai aur `$bind` paths ko sirf walk karta hai, kabhi string ko code ki tarah execute nahi karta.
+**Q: Why is widget data untrusted, and what is this system's core safety guarantee?**
+A: The data ultimately comes from AI tool-call output or knowledge-base content — neither of which is under Freddy's own deterministic control. The core guarantee: there is no expression evaluator anywhere in the render pipeline — the renderer picks from a closed `NODE_TYPES` list and only walks `$bind` paths, never executing a string as code.
 
-**Q: `{$bind: "$.path"}` aur ek JS template string mein fundamental difference kya hai?**
-A: Template string ek expression evaluate karta hai — arithmetic, function calls, kuch bhi ho sakta hai. `$bind` sirf ek dot/bracket path hai jise `resolvePath` plain object traversal se walk karta hai — koi parser nahi, sirf `.split(".")` aur key lookup. Computation ki gunjaish hi nahi hai.
+**Q: What's the fundamental difference between `{$bind: "$.path"}` and a JS template string?**
+A: A template string evaluates an expression — arithmetic, function calls, anything. `$bind` is only a dot/bracket path, which `resolvePath` walks by plain object traversal — no parser, just `.split(".")` and key lookups. There's no room for computation at all.
 
-**Q: Prototype pollution attack widget data se kaise ho sakta tha, aur code isse kaise rokta hai?**
-A: Agar model `"$.__proto__.polluted"` jaisa path bhej de aur lookup blindly `base[key]` kare, toh `Object.prototype` tak pahunch sakta tha. `resolve.ts` explicitly `__proto__`, `constructor`, `prototype` segments ko reject kar deta hai — yeh check har path lookup ke andar hai, bypass nahi ho sakta.
+**Q: How could a prototype pollution attack have come through widget data, and how does the code prevent it?**
+A: If the model sent a path like `"$.__proto__.polluted"` and the lookup blindly did `base[key]`, it could reach `Object.prototype`. `resolve.ts` explicitly rejects `__proto__`, `constructor`, and `prototype` segments — and that check lives inside every path lookup, so it can't be bypassed.
 
-**Q: `when` false hone pe children mount kyun nahi hote, aur yeh kyun matter karta hai?**
-A: `RenderNode` sabse pehle `when` check karta hai — false pe turant `null` return, props resolve ya children recurse kabhi hota hi nahi. Isse malformed ya missing-data child kabhi render attempt bhi nahi karta jab tak parent visible na ho.
+**Q: Why don't children mount when `when` is false, and why does that matter?**
+A: `RenderNode` checks `when` first — on false it returns `null` immediately, and props are never resolved and children never recursed. So a malformed or missing-data child never even attempts to render unless its parent is visible.
 
-**Q: `repeat` ko separate function mein kyun implement kiya, single fragment return kyun nahi kiya?**
-A: Agar repeat ek `<>{...}</>` fragment return kare, toh `Carousel` jaisa parent jo children ko individually slot karta hai usko sirf "ek child" dikhta hai, aur poora fragment ek slot mein chala jaata hai (vertical stack bug). `expandRepeat` isliye `ReactElement[]` return karta hai jo parent ke flat children array mein merge ho jaata hai.
+**Q: Why is `repeat` implemented as a separate function instead of returning a single fragment?**
+A: If repeat returned a `<>{...}</>` fragment, a parent like `Carousel` that slots children individually would see only "one child" and the whole fragment would land in a single slot (the vertical-stack bug). So `expandRepeat` returns a `ReactElement[]` that merges into the parent's flat children array.
 
-**Q: Version mismatch ho (purani definition, naya data shape) toh crash hoga?**
-A: Nahi, system deliberately degrade karta hai. `getWidget` exact version na milne pe latest fallback karta hai. Unknown node type ho toh sirf warning ke saath `null`. Missing field pe `resolvePath` `undefined` return karta hai jo silently empty render hota hai — "an unresolved binding renders as empty rather than as an error."
+**Q: Does a version mismatch (old definition, new data shape) crash things?**
+A: No, the system degrades deliberately. `getWidget` falls back to the latest when the exact version isn't found. An unknown node type yields `null` with just a warning. A missing field makes `resolvePath` return `undefined`, which renders silently empty — "an unresolved binding renders as empty rather than as an error."
 
-**Q: `stateBy` widget ko "reconstructible" kaise banaata hai?**
-A: `stateBy` data ke ek field ki value ko `map` mein lookup karke batata hai kaunsa named `states` entry render hoga. State local React state se nahi, data se derive hoti hai — isliye conversation reopen karne pe stored `data` replay hoke exactly wahi state deterministically wapas aati hai.
+**Q: How does `stateBy` make a widget "reconstructible"?**
+A: `stateBy` looks up the value of one data field in a `map` to decide which named `states` entry renders. The state is derived from the data, not from local React state — so reopening the conversation replays the stored `data` and deterministically restores exactly the same state.
 
-**Q: Naya widget primitive add karna ho, toh kya-kya touch karna padega?**
-A: Teen jagah: `tree.ts` ke `NODE_TYPES` mein naya string, ek React component `primitives/` mein, aur `primitives/index.ts` ke `PRIMITIVES` record mein map. `PRIMITIVES` ka type `Record<NodeType, ComponentType<...>>` hai — agar renderer add karna bhool jao, TypeScript compile hi fail ho jaayega, blank widget silently nahi milega.
+**Q: To add a new widget primitive, what would you have to touch?**
+A: Three places: a new string in `tree.ts`'s `NODE_TYPES`, a React component in `primitives/`, and a mapping in `primitives/index.ts`'s `PRIMITIVES` record. `PRIMITIVES` is typed as `Record<NodeType, ComponentType<...>>` — so if you forget to add the renderer, the TypeScript compile fails rather than silently giving you a blank widget.
 
 ### Dashboard App Architecture ([full doc](frontend/05-dashboard-app-architecture.md))
 
-**Q: Dashboard mein login system kyun nahi hai — koi email/password accounts table nahi?**
-A: Kyunki is product mein sirf ek operator use karta hai dashboard ko — koi multi-user roles ya permissions ki zaroorat nahi hai. `packages/backend/src/auth.ts` ke comment mein yeh explicitly likha hai: ek shared secret hi kaafi hai, users table/session store/login flow banana over-engineering hoga is scale pe.
+**Q: Why is there no login system in the dashboard — no email/password accounts table?**
+A: Because only one operator uses the dashboard in this product — there's no need for multi-user roles or permissions. The comment in `packages/backend/src/auth.ts` says it explicitly: one shared secret is enough; a users table, session store, and login flow would be over-engineering at this scale.
 
-**Q: `DashboardAuthGate` password verify kaise karta hai — koi `/auth/check` endpoint hai?**
-A: Nahi. Woh directly ek real gated endpoint, `GET /settings`, call karta hai aur dekhta hai ki success aata hai ya 401. Isse ek dedicated auth-check endpoint maintain nahi karna padta jo separately track kare ki kaunse routes actually protected hain — real route hi source of truth ban jaata hai.
+**Q: How does `DashboardAuthGate` verify the password — is there an `/auth/check` endpoint?**
+A: No. It directly calls a real gated endpoint, `GET /settings`, and sees whether it succeeds or returns 401. That way there's no dedicated auth-check endpoint to maintain and separately keep in sync with which routes are actually protected — the real route becomes the source of truth.
 
-**Q: Agar backend pe `DASHBOARD_PASSWORD` env var set nahi hai to kya hoga?**
-A: `requireDashboardAuth` middleware seedha `next()` call kar deta hai bina koi header check kiye. Toh frontend ka bhi pehla unauthenticated `GET /settings` call bina kisi key ke hi succeed ho jaayega, aur gate seedha "unlocked" ho jaayega — local dev mein yeh effectively auth ko no-op bana deta hai, jo intentional hai.
+**Q: What happens if the `DASHBOARD_PASSWORD` env var isn't set on the backend?**
+A: The `requireDashboardAuth` middleware calls `next()` straight through without checking any header. So the frontend's first unauthenticated `GET /settings` call succeeds with no key at all, and the gate goes straight to "unlocked" — in local dev this effectively makes auth a no-op, which is intentional.
 
-**Q: Password kahan store hota hai aur kaise persist hota hai across reloads?**
-A: `localStorage` mein key `"dashboard-auth-key"` ke naam se. Page reload pe `useEffect` yeh value uthata hai, `setDashboardAuthKey()` se `packages/api` client mein set karta hai, fir verify karne ke liye `/settings` call karta hai.
+**Q: Where is the password stored, and how does it persist across reloads?**
+A: In `localStorage` under the key `"dashboard-auth-key"`. On a page reload the `useEffect` reads it, sets it into the `packages/api` client via `setDashboardAuthKey()`, and then calls `/settings` to verify it.
 
-**Q: `x-dashboard-key` header kaun attach karta hai har request pe, aur kaise?**
-A: `packages/api/src/client.ts` mein ek module-level variable `dashboardAuthKey` hai. `withAuthHeader()` helper har request ke `init.headers` mein yeh header merge kar deta hai jab bhi key non-null ho. Widget kabhi `setDashboardAuthKey()` call hi nahi karta, isliye uske liye yeh hamesha `null` rehta hai aur header attach hi nahi hota.
+**Q: Who attaches the `x-dashboard-key` header to every request, and how?**
+A: `packages/api/src/client.ts` holds a module-level `dashboardAuthKey` variable. The `withAuthHeader()` helper merges that header into every request's `init.headers` whenever the key is non-null. The widget never calls `setDashboardAuthKey()`, so for it the key is always `null` and the header is never attached.
 
-**Q: Routes ka structure kaise organize hai — sab ek file mein hai ya spread hai?**
-A: `App.tsx` mein poora route tree ek jagah define hai, lekin har route ka actual component uske apne `modules/<feature>/` folder se import hota hai. Yeh feature-folder pattern hai — route wiring central hai but implementation feature ke saath colocated hai.
+**Q: How are the routes organized — all in one file or spread out?**
+A: The whole route tree is defined in one place in `App.tsx`, but each route's actual component is imported from its own `modules/<feature>/` folder. That's the feature-folder pattern — route wiring is central, but the implementation is colocated with the feature.
 
-**Q: Agar tumhe ek naya protected route add karna ho (jaise `/analytics`), kya steps honge?**
-A: Backend pe naya Hono route `requireDashboardAuth` middleware ke saath define karna hoga. Frontend pe `App.tsx` mein `<DashboardLayout>` ke andar naya `<Route path="/analytics" .../>` add karna hoga, aur `modules/analytics/` folder banana hoga is pattern ko follow karte hue. Sidebar mein bhi `customerSupportItems` array mein ek entry add karni hogi.
+**Q: If you had to add a new protected route (say `/analytics`), what would the steps be?**
+A: On the backend, define a new Hono route with the `requireDashboardAuth` middleware. On the frontend, add a new `<Route path="/analytics" .../>` inside `<DashboardLayout>` in `App.tsx`, and create a `modules/analytics/` folder following the pattern. You'd also add an entry to the `customerSupportItems` array in the sidebar.
 
-**Q: Yeh auth approach kab break hoga — koi weakness batao.**
-A: Sabse badi weakness: agar koi backend route banate waqt `requireDashboardAuth` middleware add karna bhool jaaye, wo route silently unprotected reh jaayega — aur `/settings`-based check se yeh detect nahi hoga kyunki `/settings` khud protected hai, doosre routes nahi. (Doosra edge case — `DASHBOARD_PASSWORD` production mein set na hona — upar covered hai; wahan bhi koi hard failure/warning nahi aata, silently open ho jaata hai.)
+**Q: When does this auth approach break — name a weakness.**
+A: The biggest one: if someone forgets to add the `requireDashboardAuth` middleware when creating a backend route, that route stays silently unprotected — and the `/settings`-based check won't detect it, because `/settings` itself is protected while the other route isn't. (The second edge case — `DASHBOARD_PASSWORD` being unset in production — is covered above; there too there's no hard failure or warning, it just silently opens up.)
 
-**Q: `DashboardAuthGate` mein `status === "checking"` pe `null` kyun return hota hai, loading spinner kyun nahi?**
-A: Yeh ek deliberate simplification hai — verify hone tak kuch bhi flash nahi hota (na locked form na app), jisse "flash of locked screen before actually being unlocked" jaisa UX glitch avoid hota hai. Trade-off yeh hai ki user ko thoda blank screen dikh sakta hai agar `/settings` call slow ho.
+**Q: Why does `DashboardAuthGate` return `null` while `status === "checking"` instead of showing a loading spinner?**
+A: It's a deliberate simplification — nothing flashes before verification completes (neither the locked form nor the app), which avoids the "flash of locked screen before actually being unlocked" UX glitch. The trade-off is that the user may see a brief blank screen if the `/settings` call is slow.
 
 ### Shared UI / Design System ([full doc](frontend/06-shared-ui-design-system.md))
 
-**Q: shadcn "component library" nahi to phir kya hai?**
-A: Yeh ek code generator/CLI hai. `shadcn add <component>` chalane pe woh component ka poora source code copy hoke `packages/ui/src/components/` mein aa jata hai — hum us code ke owner ban jate hain, kisi npm package version ke peeche lock nahi hote.
+**Q: If shadcn isn't a "component library", what is it?**
+A: It's a code generator/CLI. Running `shadcn add <component>` copies that component's full source code into `packages/ui/src/components/` — we become the owners of that code, not locked behind an npm package version.
 
-**Q: Base UI aur CVA mein farak kya hai — dono to "styling se related" lagte hain?**
-A: Base UI zero styling deta hai — sirf behavior aur accessibility (focus trap, keyboard nav, ARIA). CVA sirf styling deta hai — Tailwind class strings ko named variants (`variant`, `size`) mein organize karta hai, koi behavior nahi. Dono independent concerns hain jo compose ho rahe hain.
+**Q: What's the difference between Base UI and CVA — don't both look "styling-related"?**
+A: Base UI gives zero styling — only behavior and accessibility (focus trap, keyboard nav, ARIA). CVA gives only styling — it organizes Tailwind class strings into named variants (`variant`, `size`), with no behavior. Two independent concerns being composed.
 
-**Q: `cn()` helper zaroori kyun hai, sirf template string se class join kyun nahi kar dete?**
-A: Kyunki Tailwind classes conflict kar sakti hain. `Button` ka default `bg-primary` hai, caller `className="bg-red-500"` pass kare — plain concat se dono classes CSS mein jayengi aur unpredictable order jeetega. `tailwind-merge` samajhta hai dono same property (background-color) target kar rahi hain aur sirf last wali rakhta hai.
+**Q: Why is the `cn()` helper needed — why not just join classes with a template string?**
+A: Because Tailwind classes can conflict. `Button`'s default is `bg-primary`; if a caller passes `className="bg-red-500"`, a plain concat sends both classes into the CSS and an unpredictable order wins. `tailwind-merge` understands both target the same property (background-color) and keeps only the last one.
 
-**Q: `Markdown` component chatbot aur dashboard dono mein use hota hai — agar isko fork/duplicate kar diya jaye to kya risk hai?**
-A: Sabse bada risk: operator (dashboard mein) aur visitor (widget mein) ko alag rendering dikh sakti hai — jaise citation pills ek jagah click-through karein aur dusri jagah na karein. Comment khud yeh explain karta hai: "Shared verbatim... so an operator sees exactly what a visitor saw." Fork karne se yeh guarantee tootegi silently — bug turant dikhega bhi nahi.
+**Q: The `Markdown` component is used in both the chatbot and the dashboard — what's the risk of forking/duplicating it?**
+A: The biggest risk: the operator (in the dashboard) and the visitor (in the widget) could see different rendering — citation pills that click through in one place but not the other. The comment says it itself: "Shared verbatim... so an operator sees exactly what a visitor saw." Forking breaks that guarantee silently — the bug wouldn't even be immediately visible.
 
-**Q: Widget (`apps/chatbot`) ek closed shadow DOM custom element hai. Shared components wahan render hote hue kya extra dhyaan chahiye?**
-A: Shadow DOM CSS isolation deta hai, lekin iska matlab globals.css (Tailwind output) shadow root ke andar bhi inject honi chahiye, warna components unstyled dikhenge. Isi wajah se `markdown.tsx` `onCitationClick` callback prop use karta hai `href="#id"` native navigation ke bajaye — shadow root ki wajah se hash navigation boundary cross nahi kar sakta.
+**Q: The widget (`apps/chatbot`) is a closed shadow DOM custom element. What extra care do shared components need when rendering there?**
+A: Shadow DOM gives CSS isolation, which means globals.css (the Tailwind output) has to be injected inside the shadow root too, or the components render unstyled. It's also why `markdown.tsx` uses an `onCitationClick` callback prop instead of native `href="#id"` navigation — hash navigation can't cross the shadow root boundary.
 
-**Q: `oklch()` color space kyun use kiya gaya hai, hex/rgb kyun nahi?**
-A: `globals.css` ka har token (`--primary`, `--background`, etc.) `oklch(L C H)` format mein hai — perceptually uniform, matlab same lightness value alag hues mein bhi visually similar bright lagti hai, jo dark-mode tuning predictable banata hai.
+**Q: Why the `oklch()` color space instead of hex/rgb?**
+A: Every token in `globals.css` (`--primary`, `--background`, etc.) is in `oklch(L C H)` format — perceptually uniform, meaning the same lightness value looks similarly bright across different hues, which makes dark-mode tuning predictable.
 
-**Q: Agar CVA na hota, variant management kaise messier hota?**
-A: Har jagah manually ternary likhna padta (`variant === "outline" ? "..." : ...`), na type-safety milti, na `defaultVariants` jaisa fallback. CVA `VariantProps<typeof buttonVariants>` se TypeScript ko automatically variant/size ke valid union types de deta hai — invalid variant pass karna compile-time error ban jata hai.
+**Q: Without CVA, how much messier would variant management be?**
+A: You'd write manual ternaries everywhere (`variant === "outline" ? "..." : ...`), with no type safety and no `defaultVariants` fallback. CVA gives TypeScript the valid union types for variant/size automatically through `VariantProps<typeof buttonVariants>` — passing an invalid variant becomes a compile-time error.
 
 ## RAG + Backend
 
 ### RAG Ingestion Pipeline ([full doc](rag/07-rag-ingestion-pipeline.md))
 
-**Q: RAG kya hai aur yeh kyun zaroori hai?**
-A: Model ko answer se pehle relevant real documents "retrieve" karke context mein dena, taaki woh training memory se guess na kare. `ingest()` crawl karke content chunk/embed karta hai, `search()` query time pe relevant chunks nikaalta hai jo chat model ko diye jaate hain.
+**Q: What is RAG and why is it needed?**
+A: Retrieving relevant real documents and putting them into the model's context before it answers, so it doesn't guess from training memory. `ingest()` crawls and chunks/embeds the content; `search()` pulls the relevant chunks at query time, which are then given to the chat model.
 
-**Q: `ingest()` ek async generator kyun hai?**
-A: Ingest minutes le sakta hai aur dashboard ko live progress dikhana hai. Async generator har step pe typed event (`start`/`page`/`skip`/`unchanged`/`done`/`error`) yield karta hai jo SSE ke through browser tak stream hota hai. Ek plain Promise sirf "finished" bata paata.
+**Q: Why is `ingest()` an async generator?**
+A: An ingest can take minutes, and the dashboard has to show live progress. An async generator yields a typed event at every step (`start`/`page`/`skip`/`unchanged`/`done`/`error`) which streams to the browser over SSE. A plain Promise could only report "finished".
 
-**Q: Incremental re-ingest kaise kaam karta hai?**
-A: Extract ke baad naye page ka SHA-256 hash purane `store.pageHash` se compare hota hai — match hua toh chunk/embed dono skip. Chunking se pehle isliye hai kyunki chunking free hai, embedding paisa lagti hai.
+**Q: How does incremental re-ingest work?**
+A: After extraction, the new page's SHA-256 hash is compared against the stored `store.pageHash` — on a match, both chunking and embedding are skipped. It sits before chunking because chunking is free while embedding costs money.
 
-**Q: Sitemap-first crawling kyun?**
-A: Sitemap khud site ka statement hai "yeh meri real pages hain" — link-crawl tag archives, pagination bhi utha leta hai jo content nahi. Sitemap na milne pe hi fallback crawling chalti hai.
+**Q: Why sitemap-first crawling?**
+A: A sitemap is the site's own statement of "these are my real pages" — link-crawling also picks up tag archives and pagination, which aren't content. Fallback crawling only runs when no sitemap is found.
 
-**Q: Embedding-model mismatch guard ingest side pe kis problem ko rokta hai?**
-A: Dono backends (Google, Ollama) 768-dim vectors dete hain, toh mismatch crash nahi karega — silently "confidently ranked garbage" results milne lagenge. `ingest.ts` yeh crawl/embed se pehle hi check karta hai aur `setIndexModel()` se model record karta hai — network call tak nahi jaati agar mismatch mila. (Search time pe yehi guard `search.ts` mein bhi hai, query embed hone se pehle — dono jagah defense-in-depth ke liye.)
+**Q: What problem does the embedding-model mismatch guard prevent on the ingest side?**
+A: Both backends (Google, Ollama) produce 768-dim vectors, so a mismatch wouldn't crash — you'd silently start getting "confidently ranked garbage" results. `ingest.ts` checks this before any crawling or embedding and records the model via `setIndexModel()` — not even a network call goes out on a mismatch. (The same guard exists at search time in `search.ts`, before the query is embedded — defense in depth on both sides.)
 
-**Q: "prune" option default off kyun hai?**
-A: Pehli baar ka run ya `maxPages`-capped run poore site tak pahunch hi nahi paata — prune on hota toh un-reached pages ko "deleted" samajh liya jaata. Isliye sirf scheduled refresh job mein explicitly on hota hai.
+**Q: Why is the "prune" option off by default?**
+A: A first run, or a run capped by `maxPages`, never reaches the whole site — with prune on, those unreached pages would be treated as "deleted". So it's only turned on explicitly in a scheduled refresh job.
 
-**Q: Do ingest requests aa jaayen ek tenant pe, tab kya hota hai?**
-A: Dusra pehle wale ko reject nahi, `abort()` se cancel karta hai — "ingest phir dabana" almost hamesha matlab hota hai "URL badla", "dono chalao" nahi.
+**Q: What happens if two ingest requests arrive for one tenant?**
+A: The second doesn't reject the first, it cancels it with `abort()` — "pressing ingest again" almost always means "the URL changed", not "run both".
 
-**Q: Page ka markdown empty/chota nikle toh?**
-A: `extract()` typed failure return karta hai (`ok:false`, reason `"empty"`/`"too-short"`) instead of throwing ya khaali string store karne ke — dashboard pe developer ko dikhta hai *kyun* skip hua.
+**Q: What if a page's markdown comes out empty or too short?**
+A: `extract()` returns a typed failure (`ok:false`, with reason `"empty"`/`"too-short"`) instead of throwing or storing an empty string — so the developer can see on the dashboard *why* it was skipped.
 
-**Q: Heading-path prefix chunking mein itna important kyun?**
-A: Isolated sentence jaise "You have 30 days from delivery" ambiguous hai. "Billing > Refunds >" prepend karne se embedding actual query ke paas lagta hai — comment khud kehta hai yeh recall model swap se zyada move karta hai.
+**Q: Why is the heading-path prefix so important in chunking?**
+A: An isolated sentence like "You have 30 days from delivery" is ambiguous. Prepending "Billing > Refunds >" moves the embedding closer to the actual query — the comment itself says this moves recall more than swapping models does.
 
 ### RAG Hybrid Search ([full doc](rag/08-rag-hybrid-search.md))
 
-**Q: Vector search akela use kyun nahi kar sakte?**
-A: Exact strings pe weak hai — error codes/product names jaise tokens ka embedding meaningfully differentiate nahi hota, ek error code baaki sab error strings ke numerically close pad jaata hai. `SSO_REDIRECT_MISMATCH` jaisa example — BM25 exact match se turant dhoondh leta hai jabki vector search confuse ho jaata hai.
+**Q: Why can't you use vector search alone?**
+A: It's weak on exact strings — the embedding of a token like an error code or product name doesn't differentiate meaningfully, and one error code lands numerically close to every other error string. Take an example like `SSO_REDIRECT_MISMATCH` — BM25 finds it instantly by exact match while vector search gets confused.
 
-**Q: Keyword search akela use kyun nahi kar sakte?**
-A: Users apne words mein poochte hain, docs ke exact words mein nahi — "can I get my money back" ka koi word "Refunds" page se match nahi karega, so keyword-only zero results dega. Vector search meaning capture karta hai isliye yeh case handle kar leta hai.
+**Q: Why can't you use keyword search alone?**
+A: Users ask in their own words, not the docs' exact words — no word in "can I get my money back" matches the "Refunds" page, so keyword-only returns zero results. Vector search captures meaning and handles that case.
 
-**Q: RRF (Reciprocal Rank Fusion) kya hai aur weighted average kyun nahi use kiya?**
-A: RRF sirf har result ki rank position dekhta hai, actual score nahi — formula `1 / (60 + rank)`. Weighted average nahi use kar sakte kyunki cosine similarity [-1, 1] range mein hai jabki BM25 unbounded aur corpus-dependent hai — numbers directly comparable nahi. RRF_K=60 khud original paper ka value hai, bina per-corpus tuning ke achha kaam karta hai.
+**Q: What is RRF (Reciprocal Rank Fusion), and why not a weighted average?**
+A: RRF looks only at each result's rank position, not its actual score — the formula is `1 / (60 + rank)`. A weighted average isn't usable because cosine similarity is in the [-1, 1] range while BM25 is unbounded and corpus-dependent — the numbers aren't directly comparable. RRF_K=60 is the value from the original paper and works well without per-corpus tuning.
 
-**Q: `minSimilarity: 0.35` floor kyun rakha gaya hai — iska purpose ranking improve karna hai?**
-A: Nahi, purpose ranking nahi, "I don't know" bolna possible banana hai. Vector search mein hamesha ek "closest" chunk milta hai chahe docs mein topic cover ho ya na ho — bina floor ke model ko kuch na kuch handed ho jaata hai aur woh confidently us se answer bana deta hai, jo hallucination ka sabse common mechanism hai.
+**Q: Why is the `minSimilarity: 0.35` floor there — is its purpose to improve ranking?**
+A: No, its purpose isn't ranking, it's making "I don't know" possible. Vector search always finds some "closest" chunk whether or not the docs cover the topic — without a floor, the model is handed something and confidently builds an answer out of it, which is the most common mechanism behind hallucination.
 
-**Q: Embedding-model mismatch check query embed hone SE PEHLE kyun hota hai?**
-A: Do reasons — fail-fast (mismatch pata hai toh embed karne ka network round-trip hi waste hai), aur safety: dono backends 768-dimension vectors output karte hain, so check na ho toh mismatch silently ek "confidently ranked list of unrelated passages" dega — na crash, na empty result, bas galat answer jo model fact ki tarah cite karega.
+**Q: Why does the embedding-model mismatch check happen BEFORE embedding the query?**
+A: Two reasons — fail fast (if we know there's a mismatch, the embedding round-trip is wasted), and safety: both backends output 768-dimension vectors, so without the check a mismatch silently produces a "confidently ranked list of unrelated passages" — no crash, no empty result, just a wrong answer the model cites as fact.
 
-**Q: Agar `candidates: 20` ko `candidates: 5` kar do, kya problem aa sakta hai?**
-A: Fusion ka pool chhota ho jaayega — koi chunk vector search mein rank 8 pe (top-5 se bahar) lekin keyword search mein rank 2 pe ho, toh candidates=5 se woh vector list mein include hi nahi hoga, sirf keyword se contribute karega. Dono retrievers se "second opinion" milne ka chance kam ho jaata hai, especially borderline-relevant chunks ke liye.
+**Q: What could go wrong if you changed `candidates: 20` to `candidates: 5`?**
+A: The fusion pool gets smaller — a chunk that ranks 8th in vector search (outside the top 5) but 2nd in keyword search would never be in the vector list at all with candidates=5, and could only contribute from keyword. The chance of getting a "second opinion" from both retrievers drops, especially for borderline-relevant chunks.
 
-**Q: `via` field (vector/keyword/both tag) practically kis kaam aata hai?**
-A: Debugging mein — result sirf `via: ["keyword"]` hai matlab embedding model query ko theek se samajh nahi paya, jabki `via: ["vector"]` batata hai wording unusual thi but keyword match nahi mila. Yeh "the embedding is wrong" ko "the wording is unusual" se alag batane ka fastest tareeka hai — diagnostic signal hai, sirf metadata nahi.
+**Q: What is the `via` field (the vector/keyword/both tag) practically good for?**
+A: Debugging — a result that's only `via: ["keyword"]` means the embedding model didn't really understand the query, while `via: ["vector"]` tells you the wording was unusual but no keyword matched. It's the fastest way to tell "the embedding is wrong" apart from "the wording is unusual" — a diagnostic signal, not just metadata.
 
 ### Backend Chat & AI SDK ([full doc](rag/09-backend-chat-and-ai-sdk.md))
 
-**Q: Widget "sirf JavaScript" hai — backend server ki zaroorat kyun padi?**
-A: Kyunki widget ka bundle customer ki site par load hota hai jahan koi bhi view-source se sab padh sakta hai. Key widget mein hoti toh minutes mein churayi jaati. Backend hi real key hold karta hai, widget sirf usse baat karta hai.
+**Q: The widget is "just JavaScript" — why was a backend server needed at all?**
+A: Because the widget's bundle loads on the customer's site, where anyone can read everything via view-source. With the key in the widget, it would be stolen within minutes. The backend holds the real key and the widget only talks to it.
 
-**Q: CORS `origin: "*"` security hole nahi hai kya?**
-A: Deliberate hai — widget arbitrary customer domains par load hota hai jo deploy-time par pata nahi hote, ek allowlist fit nahi baithti. Real gate auth ke saath aana chahiye, jo iss iteration mein abhi nahi hai.
+**Q: Isn't CORS `origin: "*"` a security hole?**
+A: It's deliberate — the widget loads on arbitrary customer domains that aren't known at deploy time, so an allowlist doesn't fit. The real gate should come with auth, which this iteration doesn't have yet.
 
-**Q: `streamText()` vs `generateText()` — farq?**
-A: `generateText()` poora response ready hone tak block karta; `streamText()` provider se chunks aate hi `result.stream` mein expose karta hai, isliye client ko token-by-token reply dikhta hai instead of blank spinner.
+**Q: `streamText()` vs `generateText()` — what's the difference?**
+A: `generateText()` blocks until the full response is ready; `streamText()` exposes chunks in `result.stream` as they arrive from the provider, which is why the client sees a token-by-token reply instead of a blank spinner.
 
-**Q: Server tool aur client tool ek hi `tools` map mein kyun hain?**
-A: Model ke perspective se dono "callable tools" hi hain, farq pata nahi chalna chahiye. Real difference `execute` ki presence hai — server tool (`searchKnowledge`) ke paas hai, client tool (`type: "dynamic"`) ke paas nahi, isliye SDK usse incomplete step treat kar ke stream end kar deta hai.
+**Q: Why are server tools and client tools in the same `tools` map?**
+A: From the model's perspective both are just "callable tools", and the difference shouldn't be visible to it. The real difference is the presence of `execute` — the server tool (`searchKnowledge`) has one, the client tool (`type: "dynamic"`) doesn't, which is why the SDK treats it as an incomplete step and ends the stream.
 
-**Q: `stopWhen: isStepCount(5)` hata do toh?**
-A: Model tool call ke baad turant ruk jaayega — raw call + result milega, koi explaining sentence nahi banega.
+**Q: What happens if you remove `stopWhen: isStepCount(5)`?**
+A: The model stops immediately after a tool call — you get the raw call plus its result, with no explaining sentence built from it.
 
-**Q: `repairToolCall` kya solve karta hai, aur normal apps mein utna zaroori kyun nahi?**
-A: Tool schemas customer ki page se aate hain aur Gemini convert karte waqt kuch JSON-Schema keywords drop kar deta hai — model looser contract follow kar raha hota hai. Repair ek sasta `generateObject()` call se galti + sahi schema dikha ke dubara puchta hai, poori turn fail nahi hoti.
+**Q: What does `repairToolCall` solve, and why is it less necessary in normal apps?**
+A: Tool schemas come from the customer's page, and Gemini drops some JSON-Schema keywords when converting them — so the model is following a looser contract. Repair uses a cheap `generateObject()` call to show it the mistake and the correct schema and ask again, so the whole turn doesn't fail.
 
-**Q: Do timeouts alag kyun rakhe — ek hi kaafi nahi?**
-A: Alag failure modes catch karte hain — `firstChunkMs: 15_000` model ke kuch na bolne ke liye, `totalMs: 120_000` forever-trickling stream ke liye. Ek single value dono ko sahi handle nahi kar payega.
+**Q: Why two separate timeouts — isn't one enough?**
+A: They catch different failure modes — `firstChunkMs: 15_000` for a model that never says anything, `totalMs: 120_000` for a stream that trickles forever. A single value couldn't handle both correctly.
 
-**Q: Naya server tool banate waqt sabse common galti?**
-A: `tenantId` ko tool ke `inputSchema` mein daal dena — model ise "choose" kar sakega, aur prompt-injection se dusre tenant ka data maang sakta hai. `searchKnowledge` jaisa pattern sahi hai: constructor `tenantId` leta hai, closure mein bind karta hai.
+**Q: What's the most common mistake when writing a new server tool?**
+A: Putting `tenantId` into the tool's `inputSchema` — the model would then be able to "choose" it, and prompt injection could ask for another tenant's data. The `searchKnowledge` pattern is the right one: the constructor takes `tenantId` and binds it in a closure.
 
-**Q: Client tool call bina result ke resumed request mein Gemini reject kyun nahi karta?**
-A: `toModelMessages()` turn ko 3 messages mein expand karta hai (call → result → reply), flatten nahi karta. Dangling call (result-less) ka pair drop kar diya jaata hai, taaki provider reject na kare.
+**Q: Why doesn't Gemini reject a resumed request containing a client tool call with no result?**
+A: `toModelMessages()` expands the turn into 3 messages (call → result → reply) rather than flattening it. A dangling call (one with no result) has its pair dropped, so the provider never rejects it.
 
 ### Storage Layer ([full doc](rag/10-storage-layer.md))
 
-**Q: `Store` interface kyun banaya, seedha concrete class kyun nahi use kar liya?**
-A: Taaki `ingest.ts`/`search.ts` kabhi na jaane underlying DB kya hai. Dev harness SQLite pe "clone karo aur chalao" chalta hai, production `DATABASE_URL` set karke Postgres pe switch ho jaata hai — bina pipeline code touch kiye. Classic dependency inversion.
+**Q: Why build a `Store` interface instead of just using the concrete class directly?**
+A: So `ingest.ts`/`search.ts` never know what the underlying DB is. The dev harness runs "clone it and run it" on SQLite, and production switches to Postgres by setting `DATABASE_URL` — without touching pipeline code. Classic dependency inversion.
 
-**Q: `sqlite-vec` kyun nahi use kiya dev store mein?**
-A: macOS ka system SQLite extension-loading ke bina compiled aata hai, toh sqlite-vec use karne ka matlab har developer ko Homebrew se SQLite install karwana. `better-sqlite3` apna bundled binary laata hai jisme FTS5 already hai — "clone and run" promise nahi tootata.
+**Q: Why wasn't `sqlite-vec` used for the dev store?**
+A: macOS's system SQLite ships compiled without extension loading, so using sqlite-vec would mean making every developer install SQLite from Homebrew. `better-sqlite3` brings its own bundled binary with FTS5 already in it — the "clone and run" promise stays intact.
 
-**Q: Brute-force vector search production mein problem kyun nahi hai (abhi)?**
-A: Typical docs site kuch hazaar chunks ka hota hai, aur kuch hazaar dot products (768-dim) compute karna ~1ms leta hai — embedding API call ke network round trip ke saamne noise hai. Tens/hundreds of thousands chunks tak pahunchne pe `PgVectorStore` pe switch karne ka signal milta hai.
+**Q: Why isn't brute-force vector search a problem in production (for now)?**
+A: A typical docs site is a few thousand chunks, and computing a few thousand dot products (768-dim) takes ~1ms — noise next to the network round trip of the embedding API call. Reaching tens or hundreds of thousands of chunks is the signal to switch to `PgVectorStore`.
 
-**Q: WAL mode kyun explicit enable kiya?**
-A: Default journal mode mein writes readers ko block karte hain. WAL mein ingest ka write aur dashboard ka search read genuinely concurrently chal sakte hain — dono jagah set kiya gaya hai.
+**Q: Why is WAL mode explicitly enabled?**
+A: In the default journal mode, writes block readers. In WAL, an ingest's write and the dashboard's search read can genuinely run concurrently — it's set in both places.
 
-**Q: In-memory index cache kab invalidate hota hai?**
-A: Har write (`upsertPage`, `deletePage`, `clear`, etc.) pe `this.indexes.delete(tenantId)` se turant drop hota hai, aur agli search pe lazily rebuild hota hai — taaki stale vectors serve na hon.
+**Q: When does the in-memory index cache get invalidated?**
+A: On every write (`upsertPage`, `deletePage`, `clear`, etc.) it's dropped immediately via `this.indexes.delete(tenantId)` and rebuilt lazily on the next search — so stale vectors are never served.
 
-**Q: Chunk table ki key `(tenant_id, id)` kyun, `id` akela kyun nahi?**
-A: Chunk id `url#position` hai — sirf ek page ke andar unique. Do tenants same public docs site crawl karein toh same id milega; `id` akela key hota toh doosra tenant UNIQUE-constraint pe fail hota.
+**Q: Why is the chunk table's key `(tenant_id, id)` rather than just `id`?**
+A: A chunk id is `url#position` — unique only within a page. If two tenants crawl the same public docs site they get the same ids; with `id` alone as the key, the second tenant would fail on a UNIQUE constraint.
 
-**Q: Ek third store add karna ho toh kya karna padega?**
-A: `Store` implement karti nayi class likhni padegi, aur `db.ts` mein ek teesra branch add karna padega jo sahi condition pe usse instantiate kare. `ingest.ts`/`search.ts` ki ek line touch nahi karni padegi.
+**Q: What would it take to add a third store?**
+A: Write a new class implementing `Store`, and add a third branch in `db.ts` that instantiates it under the right condition. Not one line of `ingest.ts`/`search.ts` has to be touched.
 
 ## Top 10 "if they only ask one thing per area" questions
 
-**1. `packages/api` ko "shared wire contract" kyun kaha jaata hai?** _(Monorepo & Tooling)_
-A: Yeh sirf types nahi, runtime validation bhi hai — Zod schemas backend mein incoming requests validate karte hain aur wahi schemas se derive TypeScript types dono apps compile-time pe use karte hain. Field add karo to jo bhi half update karna bhool gaye wahan TypeScript break karega — ek single source of truth, runtime + compile-time dono guarantees ke saath.
+**1. Why is `packages/api` called the "shared wire contract"?** _(Monorepo & Tooling)_
+A: It isn't only types — it's runtime validation too. The Zod schemas validate incoming requests in the backend, and the TypeScript types derived from those same schemas are used by both apps at compile time. Add a field and TypeScript breaks whichever half you forgot to update — one single source of truth, with both runtime and compile-time guarantees.
 
-**2. Base UI popups yahan kahan jaate hain by default, aur widget mein kaise handle hua?** _(Chatbot Widget Embedding)_
-A: Default `document.body` mein — shadow boundary ke bahar, so unstyled render hota. Fix: `mount()` shadow root ke andar ek `fixed`, high-`z-index` div banata hai aur `ShadowContext` se poore tree ko provide karta hai, taaki popups wahan portal karein — na host page mein, na bare shadow root mein (jahan koi stacking context na hone se peeche paint ho jaata).
+**2. Where do Base UI popups go by default, and how does the widget handle that?** _(Chatbot Widget Embedding)_
+A: Into `document.body` by default — outside the shadow boundary, so they'd render unstyled. The fix: `mount()` creates a `fixed`, high-`z-index` div inside the shadow root and provides it to the whole tree through `ShadowContext`, so popups portal there — not into the host page, and not onto the bare shadow root (where the lack of a stacking context would make them paint behind).
 
-**3. Chat panel mein do alag state containers kyun hain — Query cache aur React state?** _(Chat State & Streaming)_
-A: Query settled conversation ke liye hai, panel close/reopen survive karni hoti hai. In-flight stream Query mein nahi kyunki uska `notifyManager` notifications batch karta hai — har token cache mein likhne pe 7-chunk reply sirf 2 paints mein coalesce ho gayi thi. Isliye stream plain `useState` mein, jo turant re-render karta hai.
+**3. Why are there two separate state containers in the chat panel — the Query cache and React state?** _(Chat State & Streaming)_
+A: Query is for the settled conversation, which has to survive the panel closing and reopening. The in-flight stream isn't in Query because its `notifyManager` batches notifications — writing every token into the cache coalesced a 7-chunk reply into just 2 paints. So the stream lives in plain `useState`, which re-renders immediately.
 
-**4. Widget data untrusted kyun hai, aur is system ka core safety guarantee kya hai?** _(Widget Tree Rendering)_
-A: Data ultimately AI tool-call output ya knowledge-base content se aata hai — dono deterministic control mein nahi hain. Core guarantee: render pipeline mein kahin bhi expression evaluator nahi hai — renderer ek closed `NODE_TYPES` list se pick karta hai aur `$bind` paths ko sirf walk karta hai, kabhi string ko code ki tarah execute nahi karta.
+**4. Why is widget data untrusted, and what is this system's core safety guarantee?** _(Widget Tree Rendering)_
+A: The data ultimately comes from AI tool-call output or knowledge-base content — neither is under deterministic control. The core guarantee: there is no expression evaluator anywhere in the render pipeline — the renderer picks from a closed `NODE_TYPES` list and only walks `$bind` paths, never executing a string as code.
 
-**5. `DashboardAuthGate` password verify kaise karta hai — koi `/auth/check` endpoint hai?** _(Dashboard App Architecture)_
-A: Nahi. Woh directly ek real gated endpoint, `GET /settings`, call karta hai aur dekhta hai ki success aata hai ya 401. Isse ek dedicated auth-check endpoint maintain nahi karna padta jo separately track kare ki kaunse routes actually protected hain — real route hi source of truth ban jaata hai.
+**5. How does `DashboardAuthGate` verify the password — is there an `/auth/check` endpoint?** _(Dashboard App Architecture)_
+A: No. It directly calls a real gated endpoint, `GET /settings`, and sees whether it succeeds or returns 401. That way there's no dedicated auth-check endpoint to maintain and separately keep in sync with which routes are actually protected — the real route becomes the source of truth.
 
-**6. shadcn "component library" nahi to phir kya hai?** _(Shared UI / Design System)_
-A: Yeh ek code generator/CLI hai. `shadcn add <component>` chalane pe woh component ka poora source code copy hoke `packages/ui/src/components/` mein aa jata hai — hum us code ke owner ban jate hain, kisi npm package version ke peeche lock nahi hote.
+**6. If shadcn isn't a "component library", what is it?** _(Shared UI / Design System)_
+A: It's a code generator/CLI. Running `shadcn add <component>` copies that component's full source code into `packages/ui/src/components/` — we become the owners of that code, not locked behind an npm package version.
 
-**7. `ingest()` ek async generator kyun hai?** _(RAG Ingestion Pipeline)_
-A: Ingest minutes le sakta hai aur dashboard ko live progress dikhana hai. Async generator har step pe typed event (`start`/`page`/`skip`/`unchanged`/`done`/`error`) yield karta hai jo SSE ke through browser tak stream hota hai. Ek plain Promise sirf "finished" bata paata.
+**7. Why is `ingest()` an async generator?** _(RAG Ingestion Pipeline)_
+A: An ingest can take minutes, and the dashboard has to show live progress. An async generator yields a typed event at every step (`start`/`page`/`skip`/`unchanged`/`done`/`error`) which streams to the browser over SSE. A plain Promise could only report "finished".
 
-**8. RRF (Reciprocal Rank Fusion) kya hai aur weighted average kyun nahi use kiya?** _(RAG Hybrid Search)_
-A: RRF sirf har result ki rank position dekhta hai, actual score nahi — formula `1 / (60 + rank)`. Weighted average nahi use kar sakte kyunki cosine similarity [-1, 1] range mein hai jabki BM25 unbounded aur corpus-dependent hai — numbers directly comparable nahi. Rank position hi ek aisi property hai jo har corpus mein consistent transfer karti hai.
+**8. What is RRF (Reciprocal Rank Fusion), and why not a weighted average?** _(RAG Hybrid Search)_
+A: RRF looks only at each result's rank position, not its actual score — the formula is `1 / (60 + rank)`. A weighted average isn't usable because cosine similarity is in the [-1, 1] range while BM25 is unbounded and corpus-dependent — the numbers aren't directly comparable. Rank position is the one property that transfers consistently across corpora.
 
-**9. Widget "sirf JavaScript" hai — backend server ki zaroorat kyun padi?** _(Backend Chat & AI SDK)_
-A: Kyunki widget ka bundle customer ki site par load hota hai jahan koi bhi view-source se sab padh sakta hai. Gemini ka API key widget mein hoti toh minutes mein churayi jaati. Backend hi real key hold karta hai, widget sirf usse baat karta hai — poora `packages/backend` ka existence isi ek fact se justify hota hai.
+**9. The widget is "just JavaScript" — why was a backend server needed at all?** _(Backend Chat & AI SDK)_
+A: Because the widget's bundle loads on the customer's site, where anyone can read everything via view-source. With the Gemini API key in the widget, it would be stolen within minutes. The backend holds the real key and the widget only talks to it — the entire existence of `packages/backend` is justified by that one fact.
 
-**10. `Store` interface kyun banaya, seedha concrete class kyun nahi use kar liya?** _(Storage Layer)_
-A: Taaki `ingest.ts`/`search.ts` kabhi na jaane underlying DB kya hai. Dev harness SQLite pe "clone karo aur chalao" chalta hai, production `DATABASE_URL` set karke Postgres pe switch ho jaata hai — bina pipeline code touch kiye. Classic dependency inversion, aur poore RAG package ki portability isi ek interface pe tiki hai.
+**10. Why build a `Store` interface instead of just using the concrete class directly?** _(Storage Layer)_
+A: So `ingest.ts`/`search.ts` never know what the underlying DB is. The dev harness runs "clone it and run it" on SQLite, and production switches to Postgres by setting `DATABASE_URL` — without touching pipeline code. Classic dependency inversion, and the whole RAG package's portability rests on that one interface.

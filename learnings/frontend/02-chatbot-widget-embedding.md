@@ -1,15 +1,15 @@
-# Chatbot Widget Embedding — Shadow DOM aur Web Component
-_Kisi bhi website mein ek `<script>` tag daalo, ek custom HTML tag likho, aur bas — chatbot ready, bina kisi framework ke aur bina host page ka CSS todhe._
+# Chatbot Widget Embedding — Shadow DOM and Web Components
+_Drop one `<script>` tag into any website, write one custom HTML tag, and you're done — the chatbot is ready, with no framework and without breaking the host page's CSS._
 
-## Yeh hai kya? (What is this)
+## What is this?
 
-`apps/chatbot` ek embeddable widget hai jo ek native Web Component (browser ka apna built-in feature, koi library nahi) ke roop mein ship hota hai — `<freddy-chat>`. Koi bhi website — React ho, plain HTML ho, WordPress ho — bas ek `<script>` include karke `<freddy-chat api-url="...">` likh sakti hai, aur andar poora React 19 app chal raha hota hai. Trick yeh hai ki poora widget ek "closed shadow DOM" (browser-native private mini-DOM) ke andar render hota hai, jo isse host page se completely isolate kar deta hai.
+`apps/chatbot` is an embeddable widget that ships as a native Web Component (a built-in browser feature, not a library) — `<freddy-chat>`. Any website — React, plain HTML, WordPress — can include one `<script>` and write `<freddy-chat api-url="...">`, and a full React 19 app runs inside it. The trick is that the entire widget renders inside a "closed shadow DOM" (a browser-native private mini-DOM), which isolates it completely from the host page.
 
-## Yeh kyun banaya gaya? (Why it exists)
+## Why it exists
 
-Do problems solve karni thi. Pehli: widget kisi bhi random website pe drop hoga, jiska CSS kaisa bhi ho sakta hai. Normal DOM mein render hota toh host ka CSS usko tod deta aur widget ka CSS host page ko tod deta. Shadow DOM dono directions band kar deta hai.
+Two problems had to be solved. First: the widget gets dropped onto any random website, whose CSS could be anything. If it rendered in the normal DOM, the host's CSS would break the widget and the widget's CSS would break the host page. Shadow DOM shuts both directions off.
 
-Dusri problem popups ki thi. UI library (Base UI) default mein popups ko `document.body` mein "portal" karti hai, jo shadow boundary ke BAHAR hai — isliye wahan render hua popup widget ka stylesheet dekh hi nahi paata. Code khud explain karta hai:
+The second problem was popups. The UI library (Base UI) portals popups into `document.body` by default, which is OUTSIDE the shadow boundary — so a popup rendered there can't see the widget's stylesheet at all. The code explains it itself:
 
 ```tsx
 // apps/chatbot/src/lib/shadow.tsx:6-11
@@ -21,41 +21,41 @@ Dusri problem popups ki thi. UI library (Base UI) default mein popups ko `docume
  * fixed, high-z-index layer for it instead.
 ```
 
-## Kaise kaam karta hai (How it works, step by step)
+## How it works, step by step
 
-1. **Registration.** `src/index.ts` load hote hi `defineElement()` call karta hai, jo `customElements.define("freddy-chat", ChatWidgetElement)` karta hai (`element.tsx:60-64`). Ab browser `<freddy-chat>` ko real HTML element treat karta hai.
+1. **Registration.** As soon as `src/index.ts` loads it calls `defineElement()`, which runs `customElements.define("freddy-chat", ChatWidgetElement)` (`element.tsx:60-64`). From then on the browser treats `<freddy-chat>` as a real HTML element.
 
-2. **Do use karne ke tareeke.** Ya toh khud `<freddy-chat mode="inline">` likho page mein, ya sirf `<script data-auto>` daal do aur `autoMount()` (`index.ts:45-60`) khud element bana ke `document.body` mein append kar deta hai.
+2. **Two ways to use it.** Either write `<freddy-chat mode="inline">` in the page yourself, or just drop in `<script data-auto>` and `autoMount()` (`index.ts:45-60`) creates the element and appends it to `document.body` for you.
 
-3. **`connectedCallback()`** (browser element ko DOM mein daalte hi call karta hai) `readConfig(this)` se HTML attributes parse karta hai aur `mount(this, config)` call karta hai (`element.tsx:16-19`).
+3. **`connectedCallback()`** (which the browser calls the moment the element enters the DOM) parses the HTML attributes via `readConfig(this)` and calls `mount(this, config)` (`element.tsx:16-19`).
 
-4. **Shadow root banta hai:** `host.attachShadow({ mode: "closed" })` (`mount.tsx:60`). "Closed" matlab host page ka JS bhi `element.shadowRoot` se andar nahi ghus sakta.
+4. **The shadow root is created:** `host.attachShadow({ mode: "closed" })` (`mount.tsx:60`). "Closed" means even the host page's JS can't reach inside via `element.shadowRoot`.
 
-5. **CSS `adoptedStyleSheets` se inject hoti hai,** na ki normal `<style>` se — kyunki Vite normally `<style>` ko page ke `<head>` mein daalta, jo shadow root ke andar visible nahi hota. `?inline` import se CSS string milti hai, ek `CSSStyleSheet` parse hoti hai aur sab instances mein share hoti hai (`mount.tsx:29-36`).
+5. **CSS is injected via `adoptedStyleSheets`,** not a normal `<style>` tag — because Vite would normally put that `<style>` in the page's `<head>`, which isn't visible inside the shadow root. An `?inline` import gives the CSS as a string, which is parsed into one `CSSStyleSheet` shared across all instances (`mount.tsx:29-36`).
 
-6. **Portal layer banta hai** — ek `<div>` jo shadow root ke andar hai, `position: fixed` + high `z-index` (`mount.tsx:76-84`). `ShadowContext` (`lib/shadow.tsx`) isko React tree mein pass karta hai, taaki popups yahan portal karein, `document.body` mein nahi.
+6. **A portal layer is created** — a `<div>` inside the shadow root with `position: fixed` and a high `z-index` (`mount.tsx:76-84`). `ShadowContext` (`lib/shadow.tsx`) passes it down the React tree so popups portal there instead of into `document.body`.
 
-7. **React render hota hai** `createRoot(container).render(<App .../>)` se. `App` (`app.tsx`) mode ke hisaab se `FloatingContainer` / `InlineContainer` / `FullscreenContainer` render karta hai.
+7. **React renders** via `createRoot(container).render(<App .../>)`. `App` (`app.tsx`) renders `FloatingContainer` / `InlineContainer` / `FullscreenContainer` depending on the mode.
 
-8. **Live attribute changes.** `attributeChangedCallback()` (`element.tsx:26-46`) sirf `theme` ko cheaply handle karta hai. Kisi bhi aur attribute (jaise `mode`) change hone par poora element replace ho jaata hai — kyunki attach hua shadow root kisi naye host pe move nahi ho sakta, isliye fresh element hi option hai.
+8. **Live attribute changes.** `attributeChangedCallback()` (`element.tsx:26-46`) handles only `theme` cheaply. A change to any other attribute (like `mode`) replaces the whole element — because an attached shadow root can't be moved to a new host, so a fresh element is the only option.
 
-9. **Imperative control.** Host page apne button se widget control kar sakta hai: `document.querySelector('freddy-chat').open()`, kyunki `open()`/`close()`/`toggle()` khud `ChatWidgetElement` class ke methods hain (`element.tsx:49-57`).
+9. **Imperative control.** The host page can drive the widget from its own button: `document.querySelector('freddy-chat').open()`, because `open()`/`close()`/`toggle()` are methods on the `ChatWidgetElement` class itself (`element.tsx:49-57`).
 
-10. **Teardown.** `disconnectedCallback()` `widget.destroy()` call karta hai, jo `queueMicrotask` mein React root unmount karta hai (React apne render cycle ke beech unmount hone par warning deta hai).
+10. **Teardown.** `disconnectedCallback()` calls `widget.destroy()`, which unmounts the React root inside a `queueMicrotask` (React warns if you unmount in the middle of its render cycle).
 
 ## Code walkthrough
 
-- **`element.tsx:10-19`** — `ChatWidgetElement extends HTMLElement`, native custom element class. `connectedCallback` config parse karke `mount()` call karta hai — widget ka entry point.
+- **`element.tsx:10-19`** — `ChatWidgetElement extends HTMLElement`, a native custom element class. `connectedCallback` parses the config and calls `mount()` — the widget's entry point.
 
-- **`mount.tsx:59-60`** — closed shadow DOM banane ki line:
+- **`mount.tsx:59-60`** — the line that creates the closed shadow DOM:
 ```tsx
 export function mount(host: HTMLElement, config: WidgetConfig): MountedWidget {
   const shadow = host.attachShadow({ mode: "closed" })
 ```
 
-- **`lib/shadow.tsx:13-19`** — `ShadowContext`, ek React Context jo portal container ko poore tree mein available karata hai (`usePortalContainer()` se access hota hai).
+- **`lib/shadow.tsx:13-19`** — `ShadowContext`, a React Context that makes the portal container available across the tree (accessed via `usePortalContainer()`).
 
-- **`element.tsx:33-45`** — theme vs baaki attributes ka split logic, classic interview "why":
+- **`element.tsx:33-45`** — the split between theme and every other attribute, a classic interview "why":
 ```tsx
 if (name === "theme") {
   this.#config = readConfig(this)
@@ -66,48 +66,48 @@ if (name === "theme") {
 const replacement = document.createElement(TAG_NAME)
 ```
 
-- **`lib/config.ts:58-70`** — `readConfig()` HTML attributes ko typed `WidgetConfig` mein convert karta hai, sensible fallbacks ke saath.
+- **`lib/config.ts:58-70`** — `readConfig()` converts HTML attributes into a typed `WidgetConfig`, with sensible fallbacks.
 
-- **`mount.tsx:91-106`** — inline mode ke liye host explicitly sized banana padta hai (page layout mein participate karta hai); floating/fullscreen `display: contents` rakhke layout se escape karte hain.
+- **`mount.tsx:91-106`** — inline mode has to size the host explicitly (it participates in page layout); floating/fullscreen escape layout by using `display: contents`.
 
 ## Diagram
 
-Neeche diagram (`02-chatbot-widget-embedding.excalidraw`) mein dikhaya gaya hai ki widget host page ke andar kaise nest hota hai. Ise excalidraw.com pe kholne ke liye File → Open use karo, ya file seedha canvas pe drag karo.
+The diagram below (`02-chatbot-widget-embedding.excalidraw`) shows how the widget nests inside the host page. Open it on excalidraw.com via File → Open, or drag the file straight onto the canvas.
 
-Flow: sabse bahar ek bada box "Host Website (real DOM)" hai — usme `document.body` bhi ek separate box hai (dikhane ke liye ki popups yahan NAHI jaate). Uske andar `<freddy-chat>` element ka box hai. Us box ke andar ek dashed-border box hai "Shadow DOM (closed)" — yeh isolation boundary hai. Is boundary ke andar do boxes side by side: "React App Tree" (jahan `App`, containers, ChatPanel render hote hain) aur "Portal Layer" (fixed, high z-index, jahan dropdowns/dialogs jaate hain). Ek arrow "attachShadow(closed)" label ke saath `<freddy-chat>` se shadow boundary ki taraf jaata hai. Ek dusra arrow `document.body` se "Portal Layer" tak jaata hai, cross/blocked mark ke saath — yeh dikhata hai ki normal Base UI portal wahan jaata, lekin humne use redirect kiya shadow ke andar.
+The flow: the outermost box is "Host Website (real DOM)" — inside it `document.body` is its own box (there to show that popups do NOT go there). Inside that is the box for the `<freddy-chat>` element. Inside that box is a dashed-border box, "Shadow DOM (closed)" — the isolation boundary. Within that boundary are two boxes side by side: "React App Tree" (where `App`, the containers, and ChatPanel render) and "Portal Layer" (fixed, high z-index, where dropdowns/dialogs go). One arrow labeled "attachShadow(closed)" runs from `<freddy-chat>` toward the shadow boundary. Another arrow runs from `document.body` to "Portal Layer" with a crossed-out/blocked mark — showing where a normal Base UI portal would have gone, and that we redirected it inside the shadow instead.
 
 ## Interview questions
 
-**Q: `<freddy-chat>` kaam kaise karta hai bina kisi framework ke host page pe?**
-A: Yeh ek native Web Component hai — `customElements.define("freddy-chat", ChatWidgetElement)` (`element.tsx:60-64`) browser ko sikhaata hai ki is tag ka matlab kya hai. Browser khud `connectedCallback()` call karta hai, koi framework runtime host page pe chahiye hi nahi.
+**Q: How does `<freddy-chat>` work on the host page with no framework?**
+A: It's a native Web Component — `customElements.define("freddy-chat", ChatWidgetElement)` (`element.tsx:60-64`) teaches the browser what the tag means. The browser calls `connectedCallback()` itself; no framework runtime is needed on the host page at all.
 
-**Q: Shadow DOM kya hai aur yahan kyun use kiya gaya?**
-A: Ek private mini-DOM tree jo element ke saath attach hoti hai, apna alag style scope rakhti hai. Do direction mein isolation chahiye thi: host ka CSS widget na todhe, widget ka CSS host na todhe. `host.attachShadow({ mode: "closed" })` (`mount.tsx:60`) yeh dono deta hai.
+**Q: What is Shadow DOM, and why is it used here?**
+A: A private mini-DOM tree attached to an element, with its own style scope. Isolation was needed in both directions: the host's CSS must not break the widget, and the widget's CSS must not break the host. `host.attachShadow({ mode: "closed" })` (`mount.tsx:60`) gives both.
 
-**Q: "closed" vs "open" shadow root — yahan closed kyun?**
-A: Open mode mein host page ka JS `element.shadowRoot` se andar mutate kar sakta hai. Closed mode mein wo property `null` return karti hai. Comment (`mount.tsx:56-57`) explicit hai: "so host-page scripts cannot reach in via `.shadowRoot` and mutate our DOM."
+**Q: "closed" vs "open" shadow root — why closed here?**
+A: In open mode the host page's JS can reach in and mutate through `element.shadowRoot`. In closed mode that property returns `null`. The comment (`mount.tsx:56-57`) is explicit: "so host-page scripts cannot reach in via `.shadowRoot` and mutate our DOM."
 
-**Q: Theme change aur mode change mein alag behavior kyun hai?**
-A: Theme sirf ek `data-theme` flag hai, in-place update ho sakta hai. `mode`/`position`/`trigger` tree shape hi badal dete hain, aur shadow root ek baar attach hone ke baad kisi naye host pe move nahi ho sakta — isliye purana element replace karna hi ek tareeka hai (`element.tsx:40-45`).
+**Q: Why do theme changes and mode changes behave differently?**
+A: Theme is just a `data-theme` flag and can be updated in place. `mode`/`position`/`trigger` change the shape of the tree, and once a shadow root is attached it can't be moved to a new host — so replacing the old element is the only way (`element.tsx:40-45`).
 
-**Q: Base UI popups yahan kahan jaate hain by default, aur widget mein kaise handle hua?**
-A: Default `document.body` mein — shadow boundary ke bahar, so unstyled render hota. Fix: `mount()` shadow root ke andar ek `fixed`, high-`z-index` div banata hai (`mount.tsx:76-84`) aur `ShadowContext` se poore tree ko provide karta hai, taaki popups wahan portal karein.
+**Q: Where do Base UI popups go by default, and how does the widget handle that?**
+A: Into `document.body` by default — outside the shadow boundary, so they'd render unstyled. The fix: `mount()` creates a `fixed`, high-`z-index` div inside the shadow root (`mount.tsx:76-84`) and provides it to the whole tree through `ShadowContext`, so popups portal there.
 
-**Q: React container `display: contents` kyun, aur portal layer alag div kyun?**
-A: `display: contents` apna stacking context nahi banata — bare container mein portal ho toh stack karne ke liye kuch nahi, host page ke peeche paint ho jaata (`mount.tsx:73-75`). Portal layer isliye `position: fixed` + explicit `z-index` ke saath alag hai.
+**Q: Why is the React container `display: contents`, and why is the portal layer a separate div?**
+A: `display: contents` creates no stacking context of its own — a portal in the bare container would have nothing to stack against and would paint behind the host page (`mount.tsx:73-75`). That's why the portal layer is separate, with `position: fixed` and an explicit `z-index`.
 
-**Q: Naya container mode add karna ho (jaise "sidebar"), kya-kya touch karna padega?**
-A: `lib/config.ts` mein `Mode` type + `MODES` array (`config.ts:1,41`), `app.tsx` ke `content` ternary mein naya branch, `containers/` mein naya file. `OBSERVED_ATTRIBUTES` mein `mode` already hai toh remount automatic hoga.
+**Q: To add a new container mode (say "sidebar"), what would you have to touch?**
+A: The `Mode` type and `MODES` array in `lib/config.ts` (`config.ts:1,41`), a new branch in `app.tsx`'s `content` ternary, and a new file in `containers/`. `mode` is already in `OBSERVED_ATTRIBUTES`, so the remount happens automatically.
 
-**Q: `adoptedStyleSheets` kyun, Vite default `<style>` injection kyun nahi?**
-A: Vite normally CSS `<head>` mein `<style>` tag se daalta hai, jo shadow root ke andar visible nahi hota. `?inline` import se raw CSS string leke `CSSStyleSheet` banaya jaata hai aur `adoptedStyleSheets` pe assign hota hai (`mount.tsx:6-8, 29-36, 63`) — ek parsed sheet sab instances mein share hoti hai.
+**Q: Why `adoptedStyleSheets` instead of Vite's default `<style>` injection?**
+A: Vite normally injects CSS into `<head>` as a `<style>` tag, which isn't visible inside the shadow root. So the raw CSS string is taken from an `?inline` import, turned into a `CSSStyleSheet`, and assigned to `adoptedStyleSheets` (`mount.tsx:6-8, 29-36, 63`) — one parsed sheet shared across all instances.
 
-**Q: Yeh design kaise galat use ho sakta hai (breaking change)?**
-A: Sabse common: koi `attachShadow({ mode: "open" })` kar de "debugging aasaan" bolke — isolation todhta hai. Doosra: naya popup component `usePortalContainer()` use na kare — silently `document.body` mein unstyled render hoga, TypeScript nahi pakdega. Teesra: inline mode mein host ki height missing ho — `mount.tsx:96-106` ka `100dvh` fallback logic hata do toh panel infinitely grow karega.
+**Q: How could this design be misused (a breaking change)?**
+A: The most common one: someone switches to `attachShadow({ mode: "open" })` because "it's easier to debug" — that breaks the isolation. Second: a new popup component doesn't use `usePortalContainer()` — it'll silently render unstyled in `document.body`, and TypeScript won't catch it. Third: a missing host height in inline mode — remove the `100dvh` fallback logic at `mount.tsx:96-106` and the panel grows indefinitely.
 
-## Common confusions (log yahan confuse hote hain)
+## Common confusions
 
-- Shadow DOM sirf styling isolation ke liye lagta hai, lekin `closed` mode security bhi deta hai — host JS access nahi kar sakta, sirf CSS isolation nahi.
-- "Custom element sirf ek wrapper hai" — nahi, `ChatWidgetElement` khud real `HTMLElement` subclass hai jiske lifecycle methods browser directly call karta hai; React sirf iske andar mount hota hai.
-- "Attribute change pe poora element replace kyun" — React ki limitation nahi, browser platform ki: shadow root ek baar attach hone ke baad us element se kabhi detach nahi hoti.
-- Portal layer ka `pointer-events: none` (popups apna `pointer-events: auto` set karte hain) important hai — warna widget ke upar ek invisible click-blocking layer ban jaata.
+- Shadow DOM looks like it's only for styling isolation, but `closed` mode adds a security dimension too — the host's JS can't reach in; it isn't just CSS isolation.
+- "The custom element is just a wrapper" — no, `ChatWidgetElement` is itself a real `HTMLElement` subclass whose lifecycle methods the browser calls directly; React only mounts inside it.
+- "Why replace the whole element on an attribute change" — it's not a React limitation but a browser-platform one: once a shadow root is attached, it can never be detached from that element.
+- The portal layer's `pointer-events: none` (popups set their own `pointer-events: auto`) matters — without it you'd get an invisible click-blocking layer sitting over the widget.

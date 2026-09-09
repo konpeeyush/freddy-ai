@@ -1,9 +1,9 @@
 # Freddy AI — Learnings
-_Ek chatbot widget, uska backstage dashboard, aur ek RAG pipeline — poora architecture, chai-pe-charcha wale tareeke se samjhaya gaya._
+_A chatbot widget, its backstage dashboard, and a RAG pipeline — the whole architecture, explained the way you'd explain it over a cup of coffee._
 
-## Yeh project hai kya
+## What is this project
 
-freddy-ai ek AI customer-support product hai jisme do user-facing pieces hain: ek embeddable chat widget (`<freddy-chat>`) jo koi bhi company apni website pe ek `<script>` tag se drop kar sakti hai, aur ek operator dashboard jahan se woh company apne conversations dekhti hai aur apni knowledge base (website ke docs/FAQs) manage karti hai. Dono ek hi Hono backend se baat karte hain, jo Gemini (ya local Ollama fallback) ko call karke replies generate karta hai — aur jawaab dene se pehle apni khud ki RAG (Retrieval-Augmented Generation) pipeline se company ke asli docs mein se relevant chunks nikaal ke model ko deta hai, taaki bot guess na kare, balki asli content se answer de. Poora repo ek pnpm + Turborepo monorepo hai, taaki widget, dashboard, aur backend ek hi shared types (`packages/api`) aur ek hi shared UI kit (`packages/ui`) use karein — bina copy-paste ke.
+freddy-ai is an AI customer-support product with two user-facing pieces: an embeddable chat widget (`<freddy-chat>`) that any company can drop onto its website with a single `<script>` tag, and an operator dashboard where that company reviews its conversations and manages its knowledge base (the site's docs/FAQs). Both talk to the same Hono backend, which calls Gemini (or a local Ollama fallback) to generate replies — and before answering, it pulls the relevant chunks out of the company's real docs through its own RAG (Retrieval-Augmented Generation) pipeline and hands them to the model, so the bot answers from actual content instead of guessing. The whole repo is a pnpm + Turborepo monorepo, so the widget, the dashboard, and the backend all share one set of types (`packages/api`) and one UI kit (`packages/ui`) — with no copy-paste.
 
 ## Tech stack
 
@@ -21,7 +21,7 @@ freddy-ai ek AI customer-support product hai jisme do user-facing pieces hain: e
 | Storage layer | `Store` interface → `SqliteStore` (better-sqlite3 + FTS5, dev) / `PgVectorStore` (Postgres + pgvector, prod) | Same `ingest()`/`search()` code runs unmodified against either backend — "clone and run" locally, flip `DATABASE_URL` for scale |
 | Shared wire contract (`packages/api`) | Zod schemas + typed fetch clients | Backend and both frontends import the same schema — change a field and TypeScript breaks whichever half forgot to update it |
 
-## Padhne ka order
+## Reading order
 
 ### Frontend
 1. [1. Monorepo & Tooling](frontend/01-monorepo-and-tooling.md)
@@ -39,28 +39,28 @@ freddy-ai ek AI customer-support product hai jisme do user-facing pieces hain: e
 
 ## Glossary
 
-- **Monorepo & pnpm workspaces** — ek hi git repo mein dono apps aur saare shared `packages/*` rehte hain; `"workspace:*"` version wale deps ko pnpm real folders pe symlink kar deta hai, koi npm publish nahi chahiye.
-- **Turborepo** — task-runner jo `turbo.json`'s `dependsOn: ["^build"]` se build-order derive karta hai aur `outputs: ["dist/**"]` se result cache karta hai; `dev` task cache-off + persistent hai kyunki Vite dev server kabhi khatam nahi hota.
-- **Zod** — TypeScript-first schema library; `packages/api/src/schema.ts` mein wire-contract isi se define hai — backend runtime pe requests validate karta hai, dono frontend apps compile-time pe wahi shape import karte hain.
-- **Shadow DOM** — browser-native private mini-DOM jo ek element ke saath attach hoti hai apna alag style scope leke; `host.attachShadow({mode:"closed"})` widget ka CSS host page se aur host ka CSS widget se isolate kar deta hai.
-- **Custom element / Web Component** — `customElements.define("freddy-chat", ChatWidgetElement)` se browser ko sikhaya jaata hai ki `<freddy-chat>` ka matlab kya hai; koi framework runtime host page pe chahiye hi nahi.
-- **Hook** — React ka function jo component ke andar state/lifecycle attach karta hai; `useChat` (`apps/chatbot/src/chat/use-chat.ts`) poore chat panel ka messages/streaming/tools state isi se manage karta hai.
-- **Streaming** — poora response ek saath ready hone ka wait nahi, chunks aate hi consume karna; `streamText()` se Gemini ka reply token-by-token backend se widget tak pahunchta hai.
-- **SSE (Server-Sent Events)** — backend se browser ko ek-tarafa live events bhejne ka tareeka; `/chat` ka reply-stream aur `/rag/ingest` ke progress events dono isi se aate hain.
-- **Embedding** — text ka numeric representation; freddy-ai mein har chunk aur har query 768-number ka `Float32Array` ban jaata hai (`embed.ts`).
-- **Vector & cosine similarity** — embedding hi vector hai; cosine similarity do vectors ke beech "meaning kitna similar hai" measure karta hai — isi se `searchVector` top candidates rank karta hai.
-- **Hybrid search** — vector search (meaning-based) aur keyword/BM25 search (exact-match-based) dono ek saath chalana; `search.ts` inhe combine karke top 5 chunks return karta hai.
-- **RRF (Reciprocal Rank Fusion)** — do ranked lists ko sirf unki rank-position dekh ke fuse karne ka formula (`1/(60+rank)`) — cosine score aur BM25 score directly comparable na hone ki problem yeh solve karta hai.
-- **Chunking** — bade document ko chhote, self-contained pieces mein todna; `chunk.ts` markdown headings pe todta hai (character-count pe nahi) aur har chunk ke aage uska heading-path prepend karta hai.
-- **RAG (Retrieval-Augmented Generation)** — model ko answer generate karne se pehle relevant real chunks retrieve karke context mein dena, taaki woh training memory se guess na kare — poore `packages/rag` ka yehi purpose hai.
-- **LLM** — Gemini (ya local Ollama fallback), `packages/backend`'s `/chat` route jo actually text generate karta hai; widget/dashboard sirf isi ke around bane hain.
-- **Tool calling** — model ko ek function call karne dena (jaise `searchKnowledge`) aur uska result usko wapas dena taaki woh us data se answer bana sake; server tools (`execute` hoti hai) aur client tools (browser mein chalti hain) dono ek hi `tools` map mein baithti hain.
-- **Hono** — lightweight Node server framework jo `/chat`, `/rag/*`, `/conversations` routes host karta hai — sirf yeh process Gemini API key rakhta hai.
-- **TanStack Query** — server-state caching library; settled conversation isi ke cache mein rehti hai (`use-chat.ts`), lekin in-flight streaming ke liye nahi use hota kyunki uska `notifyManager` notifications batch karta hai (per-token updates coalesce ho jaate).
-- **shadcn / Base UI / CVA** — teeno milke `packages/ui` banate hain: shadcn component ka source code copy karke deta hai (npm package nahi), Base UI headless accessibility/behavior deta hai (focus trap, ARIA), CVA Tailwind class-strings ko type-safe named variants mein organize karta hai.
-- **SQLite FTS5 & pgvector** — dono `Store` interface implement karte hain — dev mein `better-sqlite3`'s bundled FTS5 (keyword search) + brute-force cosine, production mein Postgres ka `pgvector` extension (`<=>` operator se vector search); same `search.ts`/`ingest.ts` code dono pe unmodified chalta hai.
-- **Hallucination** — model ka confidently kuch galat/bana hua bol dena; `minSimilarity: 0.35` floor (`search.ts`) isi ko rokta hai — bina achhe match ke, "I don't know" ek reachable outcome banta hai, chunk force-feed nahi hota.
+- **Monorepo & pnpm workspaces** — both apps and every shared `packages/*` live in one git repo; pnpm symlinks any dep with a `"workspace:*"` version to the real folder, so nothing has to be published to npm.
+- **Turborepo** — a task runner that derives build order from `turbo.json`'s `dependsOn: ["^build"]` and caches results via `outputs: ["dist/**"]`; the `dev` task is cache-off and persistent because a Vite dev server never exits.
+- **Zod** — a TypeScript-first schema library; the wire contract in `packages/api/src/schema.ts` is defined with it — the backend validates requests at runtime, and both frontend apps import the same shape at compile time.
+- **Shadow DOM** — a browser-native private mini-DOM attached to an element, with its own style scope; `host.attachShadow({mode:"closed"})` isolates the widget's CSS from the host page and the host's CSS from the widget.
+- **Custom element / Web Component** — `customElements.define("freddy-chat", ChatWidgetElement)` teaches the browser what `<freddy-chat>` means; no framework runtime is needed on the host page at all.
+- **Hook** — a React function that attaches state/lifecycle inside a component; `useChat` (`apps/chatbot/src/chat/use-chat.ts`) manages the whole chat panel's messages/streaming/tools state.
+- **Streaming** — consuming chunks as they arrive instead of waiting for the full response; `streamText()` carries Gemini's reply token by token from the backend to the widget.
+- **SSE (Server-Sent Events)** — a way to push one-way live events from the backend to the browser; both `/chat`'s reply stream and `/rag/ingest`'s progress events come through it.
+- **Embedding** — a numeric representation of text; in freddy-ai every chunk and every query becomes a 768-number `Float32Array` (`embed.ts`).
+- **Vector & cosine similarity** — an embedding *is* a vector; cosine similarity measures how close two vectors are in meaning — that's what `searchVector` ranks its top candidates by.
+- **Hybrid search** — running vector search (meaning-based) and keyword/BM25 search (exact-match-based) together; `search.ts` combines them and returns the top 5 chunks.
+- **RRF (Reciprocal Rank Fusion)** — a formula (`1/(60+rank)`) that fuses two ranked lists using only rank position — it sidesteps the problem that cosine scores and BM25 scores aren't directly comparable.
+- **Chunking** — splitting a large document into small, self-contained pieces; `chunk.ts` splits on markdown headings (not on character count) and prepends each chunk's heading path to it.
+- **RAG (Retrieval-Augmented Generation)** — retrieving relevant real chunks and putting them in the model's context before it generates an answer, so it doesn't guess from training memory — that's the entire purpose of `packages/rag`.
+- **LLM** — Gemini (or the local Ollama fallback), reached through `packages/backend`'s `/chat` route, which is what actually generates text; the widget and dashboard are just built around it.
+- **Tool calling** — letting the model call a function (like `searchKnowledge`) and handing the result back so it can answer from that data; server tools (which have an `execute`) and client tools (which run in the browser) both sit in the same `tools` map.
+- **Hono** — the lightweight Node server framework hosting the `/chat`, `/rag/*`, and `/conversations` routes — this is the only process that holds the Gemini API key.
+- **TanStack Query** — a server-state caching library; the settled conversation lives in its cache (`use-chat.ts`), but it isn't used for in-flight streaming because its `notifyManager` batches notifications (per-token updates would coalesce).
+- **shadcn / Base UI / CVA** — together they make up `packages/ui`: shadcn hands you a component's source code (not an npm package), Base UI provides headless accessibility/behavior (focus trap, ARIA), and CVA organizes Tailwind class strings into type-safe named variants.
+- **SQLite FTS5 & pgvector** — both implement the `Store` interface — in dev, `better-sqlite3`'s bundled FTS5 (keyword search) plus brute-force cosine; in production, Postgres's `pgvector` extension (vector search via the `<=>` operator); the same `search.ts`/`ingest.ts` code runs unmodified on either.
+- **Hallucination** — the model confidently stating something wrong or made up; the `minSimilarity: 0.35` floor (`search.ts`) guards against it — without a good match, "I don't know" becomes a reachable outcome instead of a chunk being force-fed.
 
 ## Interview prep
 
-Saare 10 topics ke interview questions ek jagah consolidate kiye hain — [interview-prep.md](interview-prep.md) mein dekho.
+Interview questions for all 10 topics are consolidated in one place — see [interview-prep.md](interview-prep.md).
