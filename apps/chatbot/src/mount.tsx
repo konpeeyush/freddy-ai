@@ -9,9 +9,11 @@ import cssText from "./styles.css?inline"
 
 import { App, type WidgetHandle } from "./app"
 import type { WidgetConfig, Theme } from "./lib/config"
+import { registerTools } from "./tools/registry"
+import { STOCK_TOOLS } from "./tools/stock"
 
 /*
- * Stock widget definitions.
+ * Stock widget definitions and the tools that back them.
  *
  * Registered here rather than in `src/index.ts` because `mount()` is the one
  * path every surface goes through — the shipped bundle, the dev harness, and
@@ -20,10 +22,15 @@ import type { WidgetConfig, Theme } from "./lib/config"
  * widget fell back to its summary text and looked like the model narrating
  * itself.
  *
- * Idempotent by construction: the registry keys on id and version, so
- * repeated calls overwrite rather than accumulate.
+ * `STOCK_TOOLS` gives a fresh install live data with no host-page code at
+ * all — a host that wants its own version of one of these still wins, since
+ * `registerTool` overwrites by name.
+ *
+ * Idempotent by construction: both registries key on name/id, so repeated
+ * calls overwrite rather than accumulate.
  */
 registerWidgets(STOCK_WIDGETS)
+registerTools(STOCK_TOOLS)
 
 /** One parsed sheet, shared by every widget instance on the page. */
 let sheet: CSSStyleSheet | null = null

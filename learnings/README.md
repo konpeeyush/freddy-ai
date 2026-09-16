@@ -63,4 +63,5 @@ freddy-ai is an AI customer-support product with two user-facing pieces: an embe
 
 ## Interview prep
 
-Interview questions for all 10 topics are consolidated in one place — see [interview-prep.md](interview-prep.md).
+- [project-story.md](project-story.md) — the narrative version: how to actually *tell* this project out loud, the problem it solves, the two hard bets (RAG + the embeddable widget), the war stories behind each decision, and how to steer the room when they pull on a thread.
+- [interview-prep.md](interview-prep.md) — the exhaustive Q&A bank for all 10 topics, consolidated in one place, with line-number citations.
