@@ -1,0 +1,18 @@
+name: Keep backend alive
+
+# Render's free plan spins the service down after 15 min of inactivity, which
+# makes the next request pay a cold-start penalty. Pinging /health more often
+# than that keeps it warm. GitHub can delay scheduled runs under load, so this
+# is a mitigation, not a guarantee — an occasional cold start can still slip
+# through.
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: curl -fsS --max-time 20 https://freddy-backend-3de8.onrender.com/health
