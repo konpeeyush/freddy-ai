@@ -15,4 +15,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping backend health endpoint
-        run: curl -fsS --max-time 20 https://freddy-backend-3de8.onrender.com/health
+        run: curl -fsS --max-time 90 https://freddy-backend-3de8.onrender.com/health
